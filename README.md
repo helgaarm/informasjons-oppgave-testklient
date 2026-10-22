@@ -9,7 +9,7 @@ grønnfarger og Arial, profilens systemfont. Dette er en uavhengig testklient.
 Krever Node.js 22 eller nyere og npm.
 
 ```bash
-cd testklient-informasjonsoppgave
+cd informasjons-oppgave-testklient
 npm ci
 cp .env.example .env
 npm run dev
