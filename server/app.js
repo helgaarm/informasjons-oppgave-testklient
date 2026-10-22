@@ -1,4 +1,5 @@
 import express from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { TASK_ENDPOINT, ENVIRONMENT } from '../shared/task.js';
 import { validateResource, importTask, fieldSchema } from './fhir.js';
@@ -20,16 +21,29 @@ export function createApp({ client = createHelseIdClient(), saveSettings, origin
     validHosts.add(`localhost:${originUrl.port || '80'}`); validHosts.add(`127.0.0.1:${originUrl.port || '80'}`);
   }
   app.use((req, res, next) => {
-    if (!validHosts.has(req.get('host'))) return res.status(403).json({ error: 'Ukjent vertsnavn.' });
     res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
-      'X-Frame-Options': 'DENY', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' });
-    if (!dev) res.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
-    next();
-  });
-  app.use('/api', (req, res, next) => {
+      'X-Frame-Options': 'DENY', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+      'Cross-Origin-Resource-Policy': 'same-origin', 'Cross-Origin-Opener-Policy': 'same-origin' });
+    res.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'${dev ? " 'unsafe-inline'" : ''}; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
+    if (!validHosts.has(req.get('host'))) return res.status(403).json({ error: 'Ukjent vertsnavn.' });
     const requestOrigin = req.get('origin');
     if (requestOrigin && (new URL(origin).origin !== requestOrigin && ![...validHosts].some(h => `${originUrl.protocol}//${h}` === requestOrigin))) return res.status(403).json({ error: 'Forespørselen må komme fra testklienten.' });
     if (req.get('sec-fetch-site') === 'cross-site') return res.status(403).json({ error: 'Forespørselen må komme fra testklienten.' });
+    next();
+  });
+  // One local operator, one budget. New cookies or spoofed forwarding headers
+  // cannot reset it. MemoryStore is bounded to a single key per limiter.
+  app.use(rateLimit({
+    windowMs: 60000, limit: 240, keyGenerator: () => 'local-operator',
+    standardHeaders: 'draft-8', legacyHeaders: false,
+    message: { error: 'For mange forespørsler. Vent ett minutt og prøv igjen.' },
+  }));
+  app.use(['/api/auth', '/api/tasks/send'], rateLimit({
+    windowMs: 60000, limit: 20, keyGenerator: () => 'local-operator',
+    standardHeaders: 'draft-8', legacyHeaders: false,
+    message: { error: 'For mange tilkoblings- eller innsendingsforsøk. Vent ett minutt og prøv igjen.' },
+  }));
+  app.use('/api', (req, res, next) => {
     // The static schema must not race /config to replace its session cookie.
     if (req.method === 'GET' && req.path === '/schema') return next();
     const now = Date.now();

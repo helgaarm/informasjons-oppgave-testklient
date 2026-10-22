@@ -35,6 +35,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run build
+      - name: Test repository security administration
+        if: matrix.node == 24
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
 
   secrets:
     name: Secret scan

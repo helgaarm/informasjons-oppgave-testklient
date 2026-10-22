@@ -22,7 +22,7 @@ async function setup(t, sendTask = async () => ({ ok: true, status: 201, body: {
   const { csrf } = await configResponse.json();
   const post = (route, body, extra = {}) => fetch(`${url}${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, 'X-CSRF-Token': csrf, Origin: url, ...extra }, body: JSON.stringify(body) });
   const task = exampleTask(); task.owner.identifier.value = '12345678901';
-  return { post, url, task, calls: () => calls };
+  return { post, url, task, cookie, calls: () => calls };
 }
 test('same-origin and CSRF enforcement; validation never sends; auth does not expose token', async t => {
   const s = await setup(t);
@@ -54,4 +54,33 @@ test('upstream rejection is shown and a corrected payload may be sent', async t 
   const body = { task: s.task, confirmTestData: true };
   const r = await s.post('/api/tasks/send', body); assert.equal(r.status, 502); assert.equal((await r.json()).body.resourceType, 'OperationOutcome');
   assert.equal((await s.post('/api/tasks/send', body)).status, 502);
+});
+
+test('authentication attempts are rate limited independently of session and forwarding headers', async t => {
+  const s = await setup(t);
+  for (let i = 0; i < 20; i++) {
+    const response = await s.post('/api/auth/connect', {});
+    assert.equal(response.status, 200);
+    await response.arrayBuffer();
+  }
+  const blocked = await s.post('/api/auth/connect', {}, { Cookie: '', 'X-Forwarded-For': '192.0.2.2' });
+  assert.equal(blocked.status, 429);
+  assert.ok(Number(blocked.headers.get('retry-after')) > 0);
+  assert.equal(blocked.headers.get('cache-control'), 'no-store');
+  assert.ok(!(await blocked.text()).includes('must-not-leak'));
+  // Reading the app remains possible while the smaller authentication budget is exhausted.
+  assert.equal((await fetch(`${s.url}/api/config`, { headers: { Cookie: s.cookie } })).status, 200);
+  assert.equal(s.calls(), 0);
+});
+
+test('the global request budget also covers static paths and cannot be reset with a new session', async t => {
+  const s = await setup(t); // The initial config request consumes one request.
+  for (let i = 1; i < 240; i++) {
+    const response = await fetch(`${s.url}/api/config`, { headers: { Cookie: s.cookie } });
+    assert.equal(response.status, 200);
+    await response.arrayBuffer();
+  }
+  const blocked = await fetch(`${s.url}/`, { headers: { 'X-Forwarded-For': '192.0.2.3' } });
+  assert.equal(blocked.status, 429);
+  assert.ok(Number(blocked.headers.get('retry-after')) > 0);
 });

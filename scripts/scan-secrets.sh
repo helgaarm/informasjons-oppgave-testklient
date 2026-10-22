@@ -14,4 +14,14 @@ curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 \
   --output "$scan_dir/$archive"
 printf '%s  %s\n' "$checksum" "$scan_dir/$archive" | sha256sum --check --status
 tar --extract --gzip --file "$scan_dir/$archive" --directory "$scan_dir" gitleaks
+# Check the app-specific rule with a synthetic value before scanning history.
+for field in HELSEID_TTT_API_KEY apiKey X-Auth-Key; do
+  status=0
+  printf '"%s": "%s-%s-%s-%s-%s"\n' "$field" 11111111 2222 4333 8444 555555555555 | \
+    "$scan_dir/gitleaks" stdin --config .gitleaks.toml --redact --no-banner > /dev/null 2>&1 || status=$?
+  if [ "$status" -ne 1 ]; then
+    echo "Secret rule self-test failed for $field (exit $status)." >&2
+    exit 1
+  fi
+done
 "$scan_dir/gitleaks" git --redact --no-banner --log-opts='--all' .
