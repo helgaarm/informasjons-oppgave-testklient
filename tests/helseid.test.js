@@ -59,6 +59,21 @@ test('private_key_jwt + DPoP nonce handshake signs fresh proofs, binds token and
   assert.ok(!JSON.stringify(fixture.client.status()).includes(accessToken));
   await fixture.client.getToken(); assert.equal(tokenCalls, 2);
 });
+test('client assertion keeps its 60-second lifetime across a clock tick between claims', async t => {
+  const { client } = await setup(t, () => assert.fail('No network expected'));
+  await client.loadKey();
+  t.mock.timers.enable({ apis: ['Date'], now: 1700000000999 });
+  const setNotBefore = SignJWT.prototype.setNotBefore;
+  t.mock.method(SignJWT.prototype, 'setNotBefore', function (value) {
+    t.mock.timers.tick(1);
+    return setNotBefore.call(this, value);
+  });
+  const claims = decodeJwt(await client.assertion());
+  assert.equal(claims.iat, 1700000000);
+  assert.equal(claims.nbf, claims.iat);
+  assert.equal(claims.exp - claims.iat, 60);
+});
+
 test('missing credentials fail closed without network access', async () => {
   const client = new HelseIdClient(configuration({}), () => assert.fail('No network expected'));
   assert.equal(client.status().configured, false);

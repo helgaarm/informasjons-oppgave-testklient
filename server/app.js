@@ -5,8 +5,13 @@ import { validateResource, importTask, fieldSchema } from './fhir.js';
 import { IntegrationError } from './helseid.js';
 import { createHelseIdClient } from './auth.js';
 
-export function createApp({ client = createHelseIdClient(), origin = 'http://localhost:3000', dev = false } = {}) {
+export function createApp({ client = createHelseIdClient(), saveSettings, origin = 'http://localhost:3000', dev = false } = {}) {
   const app = express();
+  let savingSettings = false, activeRequests = 0;
+  const authStatus = () => {
+    const status = client.status();
+    return { ...status, editable: typeof saveSettings === 'function' && status.mode === 'test-token' };
+  };
   app.disable('x-powered-by');
   const sessions = new Map();
   const validHosts = new Set([new URL(origin).host]);
@@ -45,9 +50,21 @@ export function createApp({ client = createHelseIdClient(), origin = 'http://loc
   });
   app.use('/api', express.json({ limit: '2mb', strict: true }));
   app.get('/api/config', (req, res) => res.json({ environment: ENVIRONMENT, endpoint: TASK_ENDPOINT,
-    csrf: req.session.csrf, auth: client.status() }));
+    csrf: req.session.csrf, auth: authStatus() }));
   app.get('/api/schema', (_req, res) => res.json(fieldSchema()));
-  app.post('/api/auth/connect', async (_req, res) => { await client.getToken(); res.json(client.status()); });
+  app.post('/api/auth/settings', async (req, res) => {
+    if (!authStatus().editable) throw new IntegrationError('Oppsettet kan ikke endres fra denne serveren. Start appen på nytt hvis den nettopp er oppdatert.', 400, 'settings_unavailable');
+    if (savingSettings || activeRequests) throw new IntegrationError('Vent til pågående lagring, tilkoblingstest eller innsending er ferdig.', 409, 'settings_busy');
+    savingSettings = true;
+    try { client = await saveSettings(req.body); res.json(authStatus()); }
+    finally { savingSettings = false; }
+  });
+  app.post('/api/auth/connect', async (_req, res) => {
+    if (savingSettings) throw new IntegrationError('Vent til oppsettet er lagret.', 409, 'settings_busy');
+    activeRequests++;
+    try { await client.getToken(); res.json(authStatus()); }
+    finally { activeRequests--; }
+  });
   app.post('/api/tasks/import', (req, res) => {
     try { res.json({ task: importTask(req.body?.text) }); }
     catch (e) { res.status(400).json({ error: e.message }); }
@@ -57,6 +74,7 @@ export function createApp({ client = createHelseIdClient(), origin = 'http://loc
     res.json({ valid: !issues.some(i => i.severity === 'error'), issues });
   });
   app.post('/api/tasks/send', async (req, res) => {
+    if (savingSettings) throw new IntegrationError('Vent til oppsettet er lagret.', 409, 'settings_busy');
     const task = req.body?.task;
     const issues = validateResource(task);
     if (issues.some(i => i.severity === 'error')) return res.status(422).json({ error: 'Oppgaven har valideringsfeil.', issues });
@@ -66,6 +84,7 @@ export function createApp({ client = createHelseIdClient(), origin = 'http://loc
     if (req.session.submissions.size >= 100) return res.status(429).json({ error: 'Økten har nådd grensen for innsendinger.' });
     req.session.submissions.set(key, 'pending');
     const correlationId = randomUUID();
+    activeRequests++;
     try {
       const result = await client.sendTask(task, correlationId);
       if (result.ok || result.deliveryUnknown) req.session.submissions.set(key, result.ok ? 'sent' : 'unknown');
@@ -75,13 +94,13 @@ export function createApp({ client = createHelseIdClient(), origin = 'http://loc
       if (e.code !== 'delivery_unknown') req.session.submissions.delete(key);
       else req.session.submissions.set(key, 'unknown');
       throw e;
-    }
+    } finally { activeRequests--; }
   });
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ukjent API-rute.' }));
   app.use((err, _req, res, _next) => {
     if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Forespørselen er for stor (maksimalt 2 MB).' });
     if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Ugyldig JSON i forespørselen.' });
-    if (err instanceof IntegrationError) return res.status(err.status).json({ error: err.message, code: err.code });
+    if (err instanceof IntegrationError) return res.status(err.status).json({ error: err.message, code: err.code, ...(err.fields ? { fields: err.fields } : {}) });
     res.status(502).json({ error: 'Tjenestekallet kunne ikke fullføres. Kontroller nettverk, HelseID-oppsett og tilgjengeligheten til testmiljøet.' });
   });
   return app;

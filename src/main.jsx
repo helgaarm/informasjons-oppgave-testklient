@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { newTask, exampleTask, getAt, setAt, validateTask, SYSTEMS, AREAS } from '../shared/task.js';
+import { submissionMessage } from '../shared/submission-feedback.js';
 import FieldEditor from './FieldEditor.jsx';
 import ConnectionSettings from './ConnectionSettings.jsx';
 import './styles.css';
+import './connection-settings.css';
+import './responsive.css';
 
 function Icon({ name, size = 20 }) {
   const paths = {
@@ -21,9 +24,9 @@ function Icon({ name, size = 20 }) {
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.task}</svg>;
 }
-function Field({ label, hint, path, value, onChange, required, maxLength, type = 'text', multiline, options, readOnly, placeholder }) {
+function Field({ label, hint, path, value, onChange, required, maxLength, type = 'text', multiline, options, readOnly, disabled, placeholder }) {
   const id = `f-${path.replaceAll('.', '-')}`;
-  const props = { id, value: value ?? '', onChange: e => onChange?.(e.target.value), required, maxLength, readOnly, placeholder, 'aria-describedby': hint ? `${id}-hint` : undefined };
+  const props = { id, value: value ?? '', onChange: e => onChange?.(e.target.value), required, maxLength, readOnly, disabled, placeholder, 'aria-describedby': hint ? `${id}-hint` : undefined };
   return <div className="field"><label htmlFor={id}>{label}{required && <span className="required"> *</span>}</label>
     {options ? <select {...props}>{options.map(([v, text]) => <option value={v} key={v}>{text}</option>)}</select> : multiline ? <textarea {...props} rows={4} /> : <input {...props} type={type} />}
     <div className="field-meta">{hint ? <span id={`${id}-hint`}>{hint}</span> : <code>{path}</code>}{maxLength && <span>{String(value ?? '').length}/{maxLength}</span>}</div>
@@ -59,7 +62,7 @@ function App() {
     if (!config) throw new Error('Vent til den lokale serveren er klar.');
     const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf }, body: JSON.stringify(payload) });
     const data = await response.json();
-    if (!response.ok && !Object.hasOwn(data, 'ok')) { const e = new Error(data.error || 'Forespørselen feilet.'); e.issues = data.issues; e.code = data.code; throw e; }
+    if (!response.ok && !Object.hasOwn(data, 'ok')) { const e = new Error(data.error || 'Forespørselen feilet.'); e.issues = data.issues; e.code = data.code; e.fields = data.fields; throw e; }
     return data;
   }
   function edit(next) { setTask(next); setDirty(true); setServerIssues(null); setResult(null); setConfirmed(false); }
@@ -113,13 +116,21 @@ function App() {
     try { const auth = await api('/api/auth/connect', {}); setConfig(c => ({ ...c, auth })); setNotice({ text: 'Testtoken hentet med DPoP. Tilgang til Helsenorge kontrolleres ved innsending.' }); }
     catch (e) { setNotice({ error: true, text: e.message }); } finally { setBusy(''); }
   }
+  async function saveConnection(settings) {
+    setBusy('settings');
+    try {
+      const auth = await api('/api/auth/settings', settings);
+      setConfig(c => ({ ...c, auth }));
+      return auth;
+    } finally { setBusy(''); }
+  }
   async function send() {
     setBusy('send'); setResult(null);
     try {
       const response = await api('/api/tasks/send', { task, confirmTestData: confirmed });
       setResult(response); setPreview('response');
       setHistory(h => [{ at: response.receivedAt, status: response.status, ok: response.ok, correlationId: response.correlationId }, ...h].slice(0, 20));
-      setNotice({ error: !response.ok, text: response.ok ? 'Oppgaven er mottatt av Helsenorge test02.' : response.deliveryUnknown ? 'Leveringsstatus er ukjent. Kontroller test02 før du prøver igjen.' : `Helsenorge avviste forespørselen (HTTP ${response.status}). Se responsen.` });
+      setNotice({ error: !response.ok, text: submissionMessage(response) });
     } catch (e) { setNotice({ error: true, text: e.message }); if (e.issues) { setServerIssues(e.issues); setPreview('validation'); } if (e.code === 'delivery_unknown') { setResult({ ok: false, deliveryUnknown: true, body: e.message }); setPreview('response'); } }
     finally { setBusy(''); fetch('/api/config').then(r => r.json()).then(setConfig).catch(() => {}); }
   }
@@ -170,7 +181,7 @@ function App() {
                 <Field path="restriction.deadline" label="Absolutt frist (valgfri)" type="date" value={(Array.isArray(task.restriction?.extension) ? task.restriction.extension : []).find(e => e.url === SYSTEMS.deadline)?.valueDate || ''} onChange={value => { const ext = (task.restriction?.extension || []).filter(e => e.url !== SYSTEMS.deadline); if (value) ext.push({ url: SYSTEMS.deadline, valueDate: value }); change('restriction.extension', ext.length ? ext : undefined); }} hint="Tillater utførelse etter ordinær svarfrist." /></div>
                 <Field path="meta.area" label="Tjenesteområde" required options={[['', 'Velg tjenesteområde …'], ...AREAS]} value={code(SYSTEMS.area)} onChange={v => setSecurity(SYSTEMS.area, v, AREAS.find(([c]) => c === v)?.[1])} />
                 <Field path="meta.sensitive" label="Avsenders navn i varsler" value={code(SYSTEMS.sensitive)} options={[["", 'Standard – ikke særskilt angitt'], ['0', 'Ikke sensitiv avsender'], ['1', 'Sensitiv avsender – skjul navnet i varsel']]} onChange={v => setSecurity(SYSTEMS.sensitive, v, v === '1' ? 'Sensitiv avsender' : 'Ikke sensitiv avsender')} hint="Marker sensitiv avsender hvis navnet kan røpe helseopplysninger i SMS, e-post eller push." />
-                <Field path="meta.access" label="Innsyn for ungdom og foreldre" value={code('urn:oid:2.16.578.1.12.4.1.1.9603')} options={[["", 'Ikke angitt'], ['N', 'Normal – ungdom og foreldre'], ['NORN_FORANS', 'Kun ungdom – nektet foreldreansvarlig'], ['NORN_UNGDOM', 'Kun foreldre – nektet ungdom']]} onChange={v => setSecurity('urn:oid:2.16.578.1.12.4.1.1.9603', v)} hint="Skal angis når testpersonen er 12–15 år. Velg ut fra den aktuelle testsituasjonen." />
+                <Field path="meta.access" label="Innsyn for ungdom og foreldre" value={code('urn:oid:2.16.578.1.12.4.1.1.9603')} options={[["", 'Ikke angitt'], ['N', 'Normal – ungdom og foreldre'], ['NORN_FORANS', 'Kun ungdom – nektet foreldreansvarlig'], ['NORN_UNGDOM', 'Kun foreldre – nektet ungdom']]} disabled hint="Støttes ikke ennå. Feltet kan ikke endres." />
                 {field('authoredOn', 'Opprettet tidspunkt (valgfritt)', { placeholder: '2026-10-22T12:00:00+02:00', hint: 'Helsenorge setter dette automatisk hvis feltet utelates.' })}
                 <details className="advanced-detail"><summary>Hvem kan utføre oppgaven?</summary><p>Uten overstyring gjelder Helsenorges standardregler. Avklar bruk av kodene med NHN.</p>{[['1', 'Kun innbygger selv'], ['2', 'Foreldre til barn under 12 år'], ['3', 'Foreldre til barn 12–15 år'], ['4', 'Fullmakt – ikke samtykkekompetent'], ['5', 'Ordinær fullmakt, samt innbygger selv'], ['6', 'Innbygger med adressesperre'], ['7', 'Innbygger selv 13–15 år']].map(([value, label]) => <label className="checkbox-label" key={value}><input type="checkbox" checked={securities.some(s => s.system === SYSTEMS.execution && s.code === value)} onChange={e => { const next = securities.filter(s => !(s.system === SYSTEMS.execution && s.code === value)); if (e.target.checked) next.push({ system: SYSTEMS.execution, code: value, display: label }); edit(setAt(task, ['meta', 'security'], next)); }} /><span>{value} · {label}</span></label>)}</details>
               </>}
@@ -190,7 +201,7 @@ function App() {
             <section className="card send-card"><div className="connection-status"><span className={`status-dot ${config?.auth?.authenticated ? 'ok' : ''}`} /><strong>HelseID test</strong><button className="text-button" onClick={() => setView('connection')}>{config?.auth?.authenticated ? 'Tilkoblet' : config?.auth?.configured ? 'Klar til tilkobling' : 'Sett opp'}</button></div><div className="send-summary"><span>Målmiljø</span><b>Helsenorge test02</b></div><label className="checkbox-label confirmation"><input type="checkbox" checked={confirmed} disabled={!!busy} onChange={e => setConfirmed(e.target.checked)} /><span>Jeg har kontrollert mottaker og innhold. Oppgaven inneholder kun testdata.</span></label><div className="send-buttons"><button className="button secondary" disabled={!!busy || !config || hasJsonChanges} onClick={validate}><Icon name="check" />{busy === 'validate' ? 'Validerer …' : 'Valider'}</button><button className="button primary" onClick={send} disabled={!!busy || !!errors.length || !confirmed || !config?.auth?.configured || hasJsonChanges || result?.ok || result?.deliveryUnknown}><Icon name="send" />{busy === 'send' ? 'Sender …' : 'Send til test02'}</button></div><p className="send-note">{!config?.auth?.configured ? 'Konfigurer HelseID under Tilkobling for å aktivere innsending.' : errors.length ? 'Rett valideringsfeilene før du sender.' : warnings.length ? `${warnings.length} merknad(er) under Kontroll. Kontroller før du sender.` : 'Oppgaven sendes først når du trykker Send til test02.'}</p></section>
           </aside></div>
         </>}
-        {view === 'connection' && <ConnectionSettings auth={config?.auth} busy={busy} connect={connect} />}
+        {view === 'connection' && <ConnectionSettings auth={config?.auth} busy={busy} connect={connect} saveSettings={saveConnection} />}
         {view === 'history' && <><div className="page-heading"><div><p className="eyebrow">DENNE NETTLESERØKTEN</p><h1>Innsendinger</h1><p>Tekniske kvitteringer fra denne økten. Ingen oppgaveinnhold lagres i historikken.</p></div></div><section className="card settings-card">{history.length ? <div className="table-scroll"><table><thead><tr><th>Tidspunkt</th><th>Status</th><th>Korrelasjons-ID</th></tr></thead><tbody>{history.map((r, i) => <tr key={i}><td>{new Date(r.at).toLocaleString('nb-NO')}</td><td>{r.ok ? 'Mottatt' : 'Avvist / ukjent'} · HTTP {r.status}</td><td><code>{r.correlationId}</code></td></tr>)}</tbody></table></div> : <div className="empty-state"><Icon name="send" size={36} /><h2>Ingen innsendinger i denne økten</h2><p>Opprett en informasjonsoppgave for å komme i gang.</p><button className="button primary" onClick={() => setView('task')}>Gå til oppgaven</button></div>}</section></>}
         <footer className="page-footer"><span>Informasjonsoppgaver · FHIR R4</span><span>Helsenorge test02 <i /> HelseID test</span></footer>
       </main>

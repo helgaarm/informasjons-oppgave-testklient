@@ -21,6 +21,15 @@ issues, pull requests, logger eller skjermbilder.
   Den skal ikke eksponeres som en offentlig eller delt webtjeneste.
 - `.env`, API-nøkler og private nøkkelfiler skal bare være lokale. Eksempelfilen
   `.env.example` inneholder tomme legitimasjonsfelt.
+- Tilkoblingsskjemaet lagrer TTT-oppsett og API-nøkkel i `secrets/connection.json`
+  på servermaskinen. Filen er utelatt fra Git og lagres uten kryptering, med
+  begrensede filrettigheter der operativsystemet støtter det. Beskytt derfor
+  brukerkontoen og den lokale prosjektmappen. API-nøkkelen skrives inn i et
+  skjult felt, men returneres aldri i API-svar eller lagres i nettleserlagring.
+- Lagring bruker samme vertsnavn-, origin-, sesjons- og CSRF-kontroller som
+  innsending. Nettleseren kan bare endre de fem TTT-feltene, ikke filsti,
+  endepunkter, miljø eller autentiseringsmetode. Lagring utfører ingen eksterne
+  tjenestekall og er sperret under tilkoblingstester og innsendinger.
 - TLS-verifikasjon skal være aktiv. Ikke bruk produksjonsnøkler i dette prosjektet.
 
 Ved lekkasje: tilbakekall/roter nøkkelen hos utstederen først. Sletting i en ny

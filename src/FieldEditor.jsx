@@ -13,7 +13,7 @@ export default function FieldEditor({ value, onChange, schema, definition = { ty
   const [custom, setCustom] = useState('');
   const [kind, setKind] = useState('string');
   if (depth > 35) return <p>For mange nivåer. Bruk JSON-visningen.</p>;
-  if (Array.isArray(value)) return <div className="tree-array">
+  if (Array.isArray(value)) return <div className="tree-array" style={{ '--tree-depth': depth }}>
     {value.map((item, index) => <div className="tree-item" key={index}>
       <div className="tree-item-bar"><span>{path.split('.').at(-1)} <b>#{index + 1}</b></span><button className="text-button danger" onClick={() => onChange(value.filter((_, i) => i !== index))} aria-label={`Fjern ${path}[${index}]`}>Fjern</button></div>
       <FieldEditor value={item} definition={{ ...definition, multiple: false }} schema={schema} path={`${path}[${index}]`} depth={depth + 1} onChange={next => onChange(value.map((v, i) => i === index ? next : v))} />
@@ -30,7 +30,7 @@ export default function FieldEditor({ value, onChange, schema, definition = { ty
       onChange({ ...value, [name]: def ? fieldDefault(def, schema) : kind === 'object' ? {} : kind === 'array' ? [] : kind === 'boolean' ? false : kind === 'number' ? 0 : '' });
       setSelected(''); setCustom('');
     }
-    return <div className="tree-object">
+    return <div className="tree-object" style={{ '--tree-depth': depth }}>
       {Object.entries(value).map(([key, child]) => {
         const def = properties.find(p => p.name === key) || { type: typeof child };
         const composite = child !== null && typeof child === 'object';

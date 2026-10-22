@@ -45,23 +45,38 @@ HelseID autentiserer API-klienten/virksomheten, ikke operatøren i nettleseren.
 ## HelseID test med Test-token-tjenesten (TTT)
 
 Standardoppsettet følger [NHNs veiledning for Test-token-tjenesten](https://utviklerportal.nhn.no/informasjonstjenester/helseid/helseid-selvbetjening/test-token-tjenesten/docs/test-token-tjenesten_enmd).
-**Du trenger ikke en registrert OAuth-klient, klient-ID eller egen privat nøkkelfil.**
+**For å hente et TTT-token trenger du ikke en registrert OAuth-klient eller egen privat nøkkelfil.**
 TTT utsteder testtoken signert med samme signeringsnøkkel som HelseID test.
 
 1. Logg inn i [HelseID Selvbetjening test → Integrasjonstesting](https://selvbetjening.test.nhn.no/ttt).
    Velg hvem du representerer og generer en TTT-API-nøkkel.
-2. Kopier `.env.example` til `.env` og fyll ut tabellen nedenfor. API-nøkkelen skal
-   kun ligge i serverens lokale konfigurasjon, ikke i kildekode eller nettleseren.
-3. Avklar eksakt audience, teknisk scope og testvirksomhetens tilgang til
-   **Helsenorge Ekstern API → Oppgave i test02** med NHN. Verdiene er ikke
-   forhåndsutfylt: visningsnavnet «Oppgave» og API-URL-en er ikke verifiserte
-   verdier for henholdsvis scope og audience.
-4. Start serveren på nytt og velg **Tilkobling → Test HelseID-tilkobling**.
+2. Åpne **Tilkobling** i appen og lim inn din egen API-nøkkel i det skjulte nøkkelfeltet.
+3. Kontroller de forhåndsutfylte forslagene: organisasjonsnummer `313231593`,
+   audience `nhn:helsenorge.eksternapi` og scope `nhn:helsenorge.eksternapi/Oppgave`.
+   Endre dem hvis du skal bruke en annen testvirksomhet eller har fått et annet
+   oppsett fra NHN. Eksisterende verdier beholdes. API-nøkkel og underenhet har
+   ingen forslag. De øvrige forslagene finnes også i `.env.example`.
+4. Velg **Lagre oppsett**, deretter **Test tilkobling**. Lagrede endringer tas i
+   bruk med én gang, uten omstart. Testen sender ingen oppgave til Helsenorge.
+
+Skjemaet lagrer oppsettet i `secrets/connection.json`, som er utelatt fra Git.
+API-nøkkelen returneres aldri til nettleseren og lagres ikke i localStorage.
+La nøkkelfeltet stå tomt ved senere endringer for å beholde eksisterende nøkkel.
+Ny lagring nullstiller tidligere testtoken, slik at det nye oppsettet må testes.
+Lagring er sperret mens en tilkoblingstest eller innsending pågår.
+
+Du kan fortsatt konfigurere variablene nedenfor i `.env` og starte appen på nytt.
+I TTT-modus overstyrer lagret skjemaoppsett disse verdiene. Fjern
+`secrets/connection.json` og start på nytt for å bruke `.env` igjen.
+Registrert klient (`HELSEID_AUTH_MODE=client_credentials`) bruker fortsatt `.env`
+og ignorerer lagret TTT-oppsett. Etter oppdatering fra en eldre appversjon må
+serveren startes på nytt én gang for å aktivere lagring fra skjemaet.
 
 | Variabel | Innhold |
 | --- | --- |
 | `HELSEID_AUTH_MODE` | `test-token` (standard uten eksisterende klient-ID) |
 | `HELSEID_TTT_API_KEY` | API-nøkkel fra Integrasjonstesting i HelseID Selvbetjening test |
+| `HELSEID_TTT_CLIENT_ID` | Valgfri testklient-ID (UUID). Tom verdi gir en automatisk test-ID for denne serverkjøringen |
 | `HELSEID_TTT_AUDIENCE` | Eksakt audience for Helsenorge-API-et |
 | `HELSEID_SCOPE` | Eksakt teknisk scope for Oppgave; flere separeres med mellomrom |
 | `HELSEID_ORGNR_PARENT` | Testvirksomhetens hovedenhet, ni siffer |
@@ -70,21 +85,43 @@ TTT utsteder testtoken signert med samme signeringsnøkkel som HelseID test.
 Testknappen kontrollerer tokenuthenting og DPoP-binding. Den beviser **ikke** at
 Helsenorge godtar tokenet, virksomheten eller oppgaven. TTT kan lage token med
 valgte claims, men gir ikke i seg selv virksomheten tilgang til Helsenorge.
-Reell aksept av dette TTT-oppsettet i test02 er ikke verifisert.
+Innsending og aksept av en fullstendig oppgave i test02 er ikke verifisert.
 
 Serveren kaller `POST https://helseid-ttt.test.nhn.no/v2/create-test-token-with-key`
 med API-nøkkelen i `X-Auth-Key`. Forespørselen angir audience, scope,
-organisasjonsnummer og `createDPoPTokenWithDPoPProof: true`. Standard bruker- og
-klientclaims slås av, slik at ingen tilfeldig testperson velges. Oppgavens innhold
-og mottakerens fødselsnummer sendes ikke til TTT.
+organisasjonsnummer og `createDPoPTokenWithDPoPProof: false`. Standard bruker- og
+klientclaims slås av. Appen setter eksplisitt `clientId`, `clientName`, en unik
+`jti`, `clientTenancy: true`, `clientTenancyType: 1` (SingleTenant) og
+`clientAuthenticationMethodsReferences: private_key_jwt` sammen med de valgte
+scope- og organisasjonsverdiene. Ingen tilfeldig testperson velges.
+Oppgavens innhold og mottakerens fødselsnummer sendes ikke til TTT.
 
-Serveren lager en midlertidig DPoP-nøkkel i minnet og sender den til TTT i det
-dokumenterte feltet `dPoPProofParameters.privateKeyForProofCreation` som en JWK.
-Dette er en separat testnøkkel; konfigurerte klientnøkler leses ikke i TTT-modus.
-TTT-svarets tokenbinding og bevis kontrolleres. Ved hvert API-kall signerer
-serveren et nytt DPoP-bevis med samme nøkkel, `ath` og eventuell nonce.
-Testknappens bevis gjenbrukes aldri. Tokenet mellomlagres bare i minnet, i inntil
-fem minutter. Nøkler og token utleveres ikke fra det lokale API-et.
+TTT-klient-ID-en genereres som en UUID og beholdes så lenge serveren kjører,
+også ved ny tokenuthenting og lagring av oppsett. Den vises under **Tekniske
+detaljer**. Bruk `HELSEID_TTT_CLIENT_ID` hvis testoppsettet krever en bestemt ID.
+Dette er en syntetisk testidentitet, ikke en klientregistrering eller
+tilgangsgodkjenning i Helsenorge. Appen kontrollerer at det returnerte tokenet
+inneholder den forespurte klient-ID-en, klientnavnet og token-ID-en, klienttypen
+`single-tenant`, autentiseringsmetoden `private_key_jwt`, gyldige tidsangivelser,
+rett scope, organisasjon og DPoP-binding før det brukes til innsending.
+
+HTTP 401 med `invalid_client` kan ha flere årsaker. «clientid is not valid» gjelder
+klient-ID-en, mens «client tenancy is unknown» gjelder klienttypen. Appen viser
+ulike forklaringer for disse feilene. Tidligere versjoner utelot disse feltene
+fra TTT-forespørselen. Hvis feilen fortsetter med korrekte klientopplysninger,
+avklar godkjent klient og tilgang til Oppgave i test02 med NHN.
+
+Se [NHNs oversikt over klientclaims](https://utviklerportal.nhn.no/informasjonstjenester/helseid/bruksmoenstre-og-eksempelkode/bruk-av-helseid/docs/teknisk-referanse/claims_nb_nomd/)
+og [TTT-definisjonen av klienttype](https://github.com/NorskHelsenett/HelseID.Samples/blob/master/Utilities/TestTokenTool/RequestModel/ClientTenancyType.cs).
+
+Serveren lager en midlertidig DPoP-nøkkel i minnet og sender bare den offentlige
+nøkkelens fingeravtrykk til TTT i `clientClaimsParameters.cnfJkt`, som støttet i
+[NHNs TestTokenTool](https://github.com/NorskHelsenett/HelseID.Samples/blob/master/Utilities/TestTokenTool/README.md).
+Privatnøkkelen forlater ikke prosessen; konfigurerte klientnøkler leses ikke i
+TTT-modus. Tokenets innhold og binding til nøkkelen kontrolleres. Ved hvert
+API-kall signerer serveren et nytt DPoP-bevis med samme nøkkel, `ath` og eventuell
+nonce. Tokenet mellomlagres bare i minnet, i inntil fem minutter. Nøkler og token
+utleveres ikke fra det lokale API-et.
 
 ### Alternativ: registrert HelseID-klient
 
@@ -110,7 +147,7 @@ som audience, samt DPoP. Token-endepunktet oppdages via discovery og begrenses t
 HelseID test. DPoP nonce-utfordringer håndteres. Eksisterende oppsett med
 `HELSEID_CLIENT_ID` og uten `HELSEID_AUTH_MODE` beholder denne flyten.
 
-`.env`, nøkkelfiler, byggfiler og avhengigheter er utelatt fra versjonskontroll.
+`.env`, `secrets/`, nøkkelfiler, byggfiler og avhengigheter er utelatt fra versjonskontroll.
 `HTTPS_PROXY`/`HTTP_PROXY` og `NO_PROXY` støttes via Undici. For en intern CA, bruk
 `NODE_EXTRA_CA_CERTS`. TLS-verifikasjon skal være aktiv.
 
@@ -137,6 +174,12 @@ HelseID test. DPoP nonce-utfordringer håndteres. Eksisterende oppsett med
 Innholdsvisningen er en forhåndsvisning av oppgaveteksten, ikke en nøyaktig
 gjengivelse av Helsenorges GUI. **Last ned JSON** eksporterer hele utkastet.
 Oppgaver lagres ikke automatisk i database eller localStorage.
+
+Oppsettet tilpasser seg vindusbredden og nettleserzoom. Skjema og forhåndsvisning
+står ved siden av hverandre når innholdsområdet har nok plass, og under hverandre
+i smalere vinduer. På mobil brytes menyer og knapper over flere linjer, og
+skjemafeltene har større tekst og trykkflater. JSON-editor og brede tabeller kan
+rulles inni sitt eget område.
 
 ## Integrasjonskontrakt
 
@@ -185,18 +228,31 @@ npm test
 npm run build
 ```
 
-Testene bruker lokale HTTP-servere, genererte engangsnøkler og mock av eksterne
-tjenester. De tester TTT-kontrakten, hemmelighold av nøkler/token, signaturer,
+Testene bruker lokale HTTP-servere, midlertidige konfigurasjonsfiler, genererte engangsnøkler og mock av eksterne
+tjenester. De tester lokal lagring, feltvalidering, nøkkelbytte og samtidige kall,
+TTT-kontrakten, hemmelighold av nøkler/token, signaturer,
 DPoP nonce-flyt, tokenbinding, import/eksport,
 bevaring av felt, validering, CSRF, duplikater og ukjent leveringsstatus. De sender
 ingen oppgaver til Helsenorge. Reell HelseID-autentisering og innsending krever
 TTT-API-nøkkel eller registrert klient, samt riktige API-claims og tilgang i test02.
-Dette er ikke verifisert mot de eksterne tjenestene i prosjektoppsettet.
+Tokenuthenting med TTT og kontroll av tokenets klientopplysninger, tidsangivelser og DPoP-binding ble manuelt verifisert
+mot HelseID test 2026-10-23, både direkte og gjennom appens tilkoblingstest
+(HTTP 200). Innsending og aksept i Helsenorge test02 er fortsatt ikke verifisert.
 
-Nettleserkontroll er utført med Chromium på 1440 og 390 pikslers bredde:
+En diagnostisk sammenligning mot Helsenorge test02 samme dato brukte bare den
+ugyldige JSON-strengen `{`, uten Task, mottaker eller melding. Token uten
+klienttype ga HTTP 401 med «client tenancy is unknown». Token med `single-tenant`
+ga i stedet HTTP 400 for den ugyldige forespørselen. Ingen oppgave ble opprettet;
+denne kontrollen erstatter ikke en test av en fullstendig innsending.
+
+En tidligere versjon ble kontrollert i Chromium på 1440 og 390 pikslers bredde:
 feltredigering, JSON-endringer, bevaring av extensions, JSON-nedlasting, XML-import,
 validering, tilkoblingsstatus og simulert API-kvittering. Ingen JavaScript-feil
-eller horisontal sideoverflyt ble observert.
+eller horisontal sideoverflyt ble observert i den versjonen. Det nye
+tilkoblingsskjemaet og de oppdaterte responsive stilene er byggkontrollert, men
+visuell nettleserkontroll gjenstår. Kontroller oppgavefanene, Tilkobling og
+Innsendinger ved 320, 390, 768, 1024, 1440 og 1920 pikslers bredde samt 200 %
+zoom, inkludert lange feltverdier, liggende mobil og dypt nestede FHIR-felt.
 
 ## Kilder
 

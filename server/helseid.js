@@ -20,6 +20,7 @@ export function configuration(env = process.env) {
     mode: env.HELSEID_AUTH_MODE?.trim() || (env.HELSEID_CLIENT_ID?.trim() ? 'client_credentials' : 'test-token'),
     apiKey: env.HELSEID_TTT_API_KEY?.trim() ?? '',
     audience: env.HELSEID_TTT_AUDIENCE?.trim() ?? '',
+    testClientId: env.HELSEID_TTT_CLIENT_ID?.trim() ?? '',
     clientId: env.HELSEID_CLIENT_ID?.trim() ?? '',
     scope: env.HELSEID_SCOPE?.trim() ?? '',
     keyFile: env.HELSEID_PRIVATE_KEY_FILE?.trim() ?? '',
@@ -93,10 +94,11 @@ export class HelseIdClient {
   async assertion() {
     await this.loadKey();
     const details = this.authorizationDetails();
+    const issuedAt = Math.floor(Date.now() / 1000);
     return new SignJWT(details ? { authorization_details: details } : {})
       .setProtectedHeader({ alg: this.config.algorithm, kid: this.kid, typ: 'client-authentication+jwt' })
       .setIssuer(this.config.clientId).setSubject(this.config.clientId).setAudience(ISSUER)
-      .setIssuedAt().setNotBefore(Math.floor(Date.now() / 1000)).setExpirationTime('60s').setJti(randomUUID()).sign(this.key);
+      .setIssuedAt(issuedAt).setNotBefore(issuedAt).setExpirationTime(issuedAt + 60).setJti(randomUUID()).sign(this.key);
   }
   async proof(url, method, nonce, accessToken) {
     await this.loadKey();
