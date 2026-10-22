@@ -1,0 +1,12 @@
+title = "Public test client secret rules"
+
+[extend]
+useDefault = true
+
+# NHN's UUID-shaped TTT keys are not covered by provider-specific defaults.
+[[rules]]
+id = "nhn-ttt-api-key"
+description = "NHN test-token API key in configuration, JSON or headers"
+regex = '''(?i)(?:HELSEID_TTT_API_KEY|X-Auth-Key|apiKey)["']?\s*[:=]\s*["']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+secretGroup = 1
+keywords = ["helseid_ttt_api_key", "x-auth-key", "apikey"]

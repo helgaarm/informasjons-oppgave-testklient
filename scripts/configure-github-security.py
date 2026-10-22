@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the repository owner's requested public-repository security settings."""
+"""Apply or verify security settings without changing repository visibility."""
 import argparse
 import json
 import subprocess
@@ -7,9 +7,12 @@ import sys
 
 REPOSITORY = 'helgaarm/informasjons-oppgave-testklient'
 BASE = f'repos/{REPOSITORY}'
-CONTEXTS = ['Tests (Node 22)', 'Tests (Node 24)', 'Secret scan', 'Dependency audit']
+CONTEXTS = ['Tests (Node 22)', 'Tests (Node 24)', 'Secret scan', 'Dependency audit', 'CodeQL']
+ACTIONS_APP_ID = 15368
 PROTECTION = {
-    'required_status_checks': {'strict': True, 'contexts': CONTEXTS},
+    'required_status_checks': {'strict': True, 'checks': [
+        {'context': name, 'app_id': ACTIONS_APP_ID} for name in CONTEXTS
+    ]},
     'enforce_admins': True,
     'required_pull_request_reviews': {
         'dismiss_stale_reviews': True,
@@ -23,18 +26,24 @@ PROTECTION = {
     'required_conversation_resolution': True,
 }
 SETTINGS = [
-    ('Offentlig repo og squash-merge', 'PATCH', BASE, {
-        'private': False, 'delete_branch_on_merge': True,
+    ('Squash-merge og opprydding', 'PATCH', BASE, {
+        'delete_branch_on_merge': True,
         'allow_squash_merge': True, 'allow_merge_commit': False,
         'allow_rebase_merge': False, 'allow_auto_merge': False,
     }),
-    ('Tillatte Actions', 'PUT', f'{BASE}/actions/permissions', {'enabled': True, 'allowed_actions': 'selected'}),
+    ('Tillatte Actions og SHA-låsing', 'PUT', f'{BASE}/actions/permissions', {
+        'enabled': True, 'allowed_actions': 'selected', 'sha_pinning_required': True,
+    }),
     ('Begrens Actions-leverandører', 'PUT', f'{BASE}/actions/permissions/selected-actions', {
         'github_owned_allowed': False, 'verified_allowed': False,
-        'patterns_allowed': ['actions/*', 'github/codeql-action/*'],
+        'patterns_allowed': ['actions/checkout@*', 'actions/setup-node@*',
+                             'actions/dependency-review-action@*', 'github/codeql-action/*@*'],
     }),
     ('Minimale Actions-rettigheter', 'PUT', f'{BASE}/actions/permissions/workflow', {
         'default_workflow_permissions': 'read', 'can_approve_pull_request_reviews': False,
+    }),
+    ('Godkjenning av eksterne bidrag', 'PUT', f'{BASE}/actions/permissions/fork-pr-contributor-approval', {
+        'approval_policy': 'all_external_contributors',
     }),
     ('Dependabot-varsler', 'PUT', f'{BASE}/vulnerability-alerts', None),
     ('Dependabot-sikkerhetsrettelser', 'PUT', f'{BASE}/automated-security-fixes', None),
@@ -47,11 +56,15 @@ SETTINGS = [
 
 
 def api(method, endpoint, data=None):
-    command = ['gh', 'api', '--method', method, endpoint, '-H', 'Accept: application/vnd.github+json']
+    command = ['gh', 'api', '--method', method, endpoint, '-H', 'Accept: application/vnd.github+json',
+               '-H', 'X-GitHub-Api-Version: 2026-03-10']
     if data is not None:
         command += ['--input', '-']
-    result = subprocess.run(command, input=json.dumps(data) if data is not None else None,
-                            text=True, capture_output=True, check=False)
+    try:
+        result = subprocess.run(command, input=json.dumps(data) if data is not None else None,
+                                text=True, capture_output=True, check=False, timeout=45)
+    except (OSError, subprocess.TimeoutExpired):
+        return False, {}, 'GitHub CLI mangler eller svarte ikke innen tidsgrensen.'
     try:
         body = json.loads(result.stdout) if result.stdout.strip() else {}
     except json.JSONDecodeError:
@@ -63,28 +76,68 @@ def api(method, endpoint, data=None):
 
 
 def protection_sufficient(current):
-    contexts = set(current.get('required_status_checks', {}).get('contexts', []))
-    checks = current.get('required_status_checks', {}).get('checks', [])
-    contexts.update(check['context'] for check in checks)
+    status_checks = current.get('required_status_checks') or {}
+    checks = status_checks.get('checks') or []
+    contexts = {check.get('context') for check in checks if check.get('app_id') == ACTIONS_APP_ID}
+    reviews = current.get('required_pull_request_reviews') or {}
     return (set(CONTEXTS) <= contexts
-            and current.get('required_status_checks', {}).get('strict') is True
+            and status_checks.get('strict') is True
             and current.get('enforce_admins', {}).get('enabled') is True
-            and bool(current.get('required_pull_request_reviews'))
+            and reviews.get('dismiss_stale_reviews') is True
             and current.get('required_linear_history', {}).get('enabled') is True
             and current.get('required_conversation_resolution', {}).get('enabled') is True
             and current.get('allow_force_pushes', {}).get('enabled') is False
             and current.get('allow_deletions', {}).get('enabled') is False)
 
 
+def contains_settings(actual, expected):
+    """Ignore server metadata, but verify every requested setting after a write."""
+    if isinstance(expected, dict):
+        return isinstance(actual, dict) and all(
+            key in actual and contains_settings(actual[key], value) for key, value in expected.items())
+    if isinstance(expected, list):
+        return isinstance(actual, list) and sorted(actual) == sorted(expected)
+    return type(actual) is type(expected) and actual == expected
+
+
+def verify():
+    failures = []
+    for label, _, endpoint, data in SETTINGS:
+        ok, body, _ = api('GET', endpoint)
+        expected = data if data is not None else (
+            {} if endpoint.endswith('/vulnerability-alerts') else {'enabled': True})
+        valid = ok and contains_settings(body, expected)
+        print(f'{"OK" if valid else "FEIL"}: {label}')
+        if not valid:
+            failures.append(label)
+    ok, body, _ = api('GET', f'{BASE}/branches/main/protection')
+    valid = ok and protection_sufficient(body)
+    print(f'{"OK" if valid else "FEIL"}: Grenbeskyttelse')
+    if not valid:
+        failures.append('Grenbeskyttelse')
+    return failures
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--plan', action='store_true', help='Vis endringer uten å kontakte GitHub.')
-    mode.add_argument('--apply', action='store_true', help='Aktiver innstillinger og gjør repoet offentlig.')
+    mode.add_argument('--apply', action='store_true', help='Aktiver sikkerhetsinnstillinger i det offentlige repoet.')
+    mode.add_argument('--check', action='store_true', help='Les og kontroller innstillinger uten å endre noe.')
     args = parser.parse_args()
     if args.plan:
         print(json.dumps({'repository': REPOSITORY, 'settings': SETTINGS, 'main_protection': PROTECTION}, indent=2))
         return 0
+
+    ok, repository, _ = api('GET', BASE)
+    if not ok or repository.get('private') is not False:
+        print('Repoet er utilgjengelig eller ikke offentlig. Ingen innstillinger er endret.')
+        return 1
+    if args.check:
+        return int(bool(verify()))
+    if repository.get('permissions', {}).get('admin') is not True:
+        print('Administratortilgang kreves. Ingen innstillinger er endret.')
+        return 1
 
     failures = []
     for label, method, endpoint, data in SETTINGS:
@@ -92,16 +145,23 @@ def main():
         print(f'{"OK" if ok else "FEIL"}: {label}{": " + message if message else ""}')
         if not ok:
             failures.append(label)
-        if label == SETTINGS[0][0] and not ok:
-            print('Offentliggjøring krever administratortilgang. Ingen øvrige innstillinger er endret.')
-            return 1
 
     endpoint = f'{BASE}/branches/main/protection'
     ok, current, message = api('GET', endpoint)
     if ok and protection_sufficient(current):
         print('OK: main har allerede nødvendig eller strengere beskyttelse.')
     elif not ok and current.get('message') == 'Branch not protected':
-        ok, _, message = api('PUT', endpoint, PROTECTION)
+        # Require evidence that the named checks exist and work before locking
+        # main. Otherwise a renamed/missing workflow could make merging impossible.
+        checks_ok, runs, _ = api('GET', f'{BASE}/commits/main/check-runs?per_page=100')
+        passed = {run.get('name') for run in runs.get('check_runs', [])
+                  if run.get('conclusion') == 'success' and run.get('app', {}).get('id') == ACTIONS_APP_ID}
+        if not checks_ok or not set(CONTEXTS) <= passed:
+            print('FEIL: Alle obligatoriske kontroller må ha bestått på main før grenbeskyttelse opprettes.')
+            failures.append('Grenbeskyttelse')
+            ok, message = False, 'Vent på CI og kjør oppsettet igjen.'
+        else:
+            ok, _, message = api('PUT', endpoint, PROTECTION)
         print(f'{"OK" if ok else "FEIL"}: Grenbeskyttelse{": " + message if message else ""}')
         if not ok:
             failures.append('Grenbeskyttelse')
@@ -109,22 +169,11 @@ def main():
         print('FEIL: Grenbeskyttelse er utilgjengelig eller har eksisterende regler som må gjennomgås manuelt. Ingen regler er overskrevet.')
         failures.append('Grenbeskyttelse')
 
-    ok, repository, _ = api('GET', BASE)
-    if not ok or repository.get('private') is not False:
-        failures.append('Verifikasjon av offentlig synlighet')
-    else:
-        print(f'Verifisert offentlig: https://github.com/{REPOSITORY}')
-
-    ok, _, message = api('POST', f'{BASE}/actions/workflows/security.yml/dispatches', {'ref': 'main'})
-    if not ok:
-        failures.append('Start av offentlig sikkerhetsanalyse')
-        print(f'FEIL: Sikkerhetsanalyse kunne ikke startes: {message}')
-    else:
-        print('Security-arbeidsflyten er startet; kontroller at CodeQL fullføres.')
+    failures.extend(verify())
     if failures:
         print('Ikke fullført: ' + ', '.join(failures))
         return 1
-    print('GitHub har bekreftet alle oppsettskall. Kontroller arbeidsflytene og innstillingene i GitHub.')
+    print('Alle sikkerhetsinnstillinger er lest tilbake og bekreftet av GitHub.')
     return 0
 
 

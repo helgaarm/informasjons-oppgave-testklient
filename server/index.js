@@ -1,9 +1,9 @@
-import express from 'express';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici';
 import { createApp } from './app.js';
 import { createConnectionSettings } from './connection-settings.js';
+import { attachBrowserAssets } from './browser-assets.js';
 
 if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) setGlobalDispatcher(new EnvHttpProxyAgent());
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,15 +14,7 @@ if (!['127.0.0.1', '::1', 'localhost'].includes(host)) throw new Error('Denne en
 const settings = await createConnectionSettings({ directory: path.join(root, 'secrets') });
 const app = createApp({ origin: process.env.APP_ORIGIN || `http://localhost:${port}`, dev,
   client: settings.client, saveSettings: settings.save });
-let vite;
-if (dev) {
-  const { createServer } = await import('vite');
-  vite = await createServer({ root, server: { middlewareMode: true, hmr: false }, appType: 'spa' });
-  app.use(vite.middlewares);
-} else {
-  app.use(express.static(path.join(root, 'dist'), { dotfiles: 'deny' }));
-  app.get('/', (_req, res) => res.sendFile(path.join(root, 'dist', 'index.html')));
-}
+const vite = await attachBrowserAssets(app, { root, dev });
 const server = app.listen(port, host);
 server.once('listening', () => console.log(`Testklient: http://localhost:${port} · Helsenorge test02`));
 server.once('error', async error => {
