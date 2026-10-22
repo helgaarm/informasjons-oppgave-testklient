@@ -12,5 +12,12 @@ secrets/
 *.pem
 *.key
 *.jwk
+*.p12
+*.pfx
+*.keystore
+*.log
+*.sarif
+__pycache__/
+*.pyc
 coverage/
 test-results/

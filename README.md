@@ -9,13 +9,19 @@ grønnfarger og Arial, profilens systemfont. Dette er en uavhengig testklient.
 Prosjektet er lisensiert under [MIT-lisensen](LICENSE).
 Copyright (c) 2026 Armann Helgason.
 
+## Sikkerhet
+
+Se [sikkerhetspolicyen](SECURITY.md) for privat rapportering, støttede versjoner
+og trygg testbruk. [GitHub-oppsettet](docs/repository-security.md) beskriver CI,
+Dependabot, CodeQL og aktivering av repoets sikkerhetsinnstillinger.
+
 ## Start prosjektet
 
 Krever Node.js 22 eller nyere og npm.
 
 ```bash
 cd informasjons-oppgave-testklient
-npm ci
+npm ci --ignore-scripts
 cp .env.example .env
 npm run dev
 ```
