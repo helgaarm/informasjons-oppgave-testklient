@@ -1,0 +1,16 @@
+# Lokal konfigurasjon
+.env
+.env.*
+!.env.example
+
+# Operativsystemfiler
+.DS_Store
+Thumbs.db
+node_modules/
+dist/
+secrets/
+*.pem
+*.key
+*.jwk
+coverage/
+test-results/
