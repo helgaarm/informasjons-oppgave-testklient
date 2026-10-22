@@ -1,4 +1,4 @@
-# Testklient for Helsenorge informasjonsoppgave
+# informasjons-oppgave-testklient
 
 Lokal webklient for å opprette og sende **FHIR R4 Task / Communication** til en
 testinnbygger i **Helsenorge test02**. React-grensesnittet bruker NHNs offisielle
