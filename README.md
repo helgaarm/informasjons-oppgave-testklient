@@ -206,7 +206,6 @@ eller horisontal sideoverflyt ble observert.
 - [Helsenorge API i systemkontekst](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1886191617)
 - [HelseID DPoP](https://utviklerportal.nhn.no/informasjonstjenester/helseid/bruksmoenstre-og-eksempelkode/bruk-av-helseid/docs/dpop/dpop_no_nbmd)
 - [HelseID organisasjonsnumre](https://utviklerportal.nhn.no/informasjonstjenester/helseid/bruksmoenstre-og-eksempelkode/bruk-av-helseid/docs/tekniske-mekanismer/organisasjonsnumre_no_nbmd)
-- [NHN profilhåndbok](https://brandpad.io/norsk-helsenett/)
 
 Dokumentasjonen ble kontrollert 22. oktober 2026. Bekreft gjeldende tilgang og
 scope i HelseID før en reell testinnsending.
