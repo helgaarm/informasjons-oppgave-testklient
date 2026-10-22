@@ -4,6 +4,11 @@ Lokal webklient for å opprette og sende **FHIR R4 Task / Communication** til en
 testinnbygger i **Helsenorge test02**. React-grensesnittet bruker NHNs offisielle
 grønnfarger og Arial, profilens systemfont. Dette er en uavhengig testklient.
 
+## Lisens
+
+Prosjektet er lisensiert under [MIT-lisensen](LICENSE).
+Copyright (c) 2026 Armann Helgason.
+
 ## Start prosjektet
 
 Krever Node.js 22 eller nyere og npm.
