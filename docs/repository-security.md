@@ -10,6 +10,9 @@ og endrer aldri synlighet. Det setter:
 - PR-er før endringer på `main`, oppdaterte og beståtte tester, hemmelighetsskanning,
   avhengighetskontroll, CodeQL, løste diskusjoner og beskyttelse også for administratorer.
   Obligatoriske statuskontroller må komme fra GitHub Actions-appen.
+- Et eget aktivt CodeQL-regelsett uten omgåelsesrettigheter sperrer fletting ved
+  nye sikkerhetsfunn av middels eller høyere alvorlighet, eller analysefunn på
+  feilnivå. Dette kontrollerer funnene, ikke bare at analysejobben fullføres.
 - Ingen force-push eller sletting av `main`. Squash-merge og lineær historikk for
   nye endringer; eksisterende historikk beholdes.
 - Lesetilgang som standard for Actions-token; arbeidsflyter kan ikke godkjenne PR-er.

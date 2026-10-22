@@ -110,6 +110,24 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertFalse(security.contains_settings({}, {'enabled': True}))
         self.assertTrue(security.contains_settings({'enabled': True, 'metadata': {}}, {'enabled': True}))
 
+    def test_code_scanning_gate_requires_findings_thresholds_and_no_bypass(self):
+        current = copy.deepcopy(security.CODE_SCANNING_RULESET)
+        self.assertTrue(security.code_scanning_sufficient(current))
+        tool = current['rules'][0]['parameters']['code_scanning_tools'][0]
+        tool['security_alerts_threshold'] = 'high_or_higher'
+        self.assertFalse(security.code_scanning_sufficient(current))
+        tool['security_alerts_threshold'] = 'all'
+        self.assertTrue(security.code_scanning_sufficient(current))
+        current['bypass_actors'] = [{'actor_type': 'RepositoryRole', 'actor_id': 5, 'bypass_mode': 'always'}]
+        self.assertFalse(security.code_scanning_sufficient(current))
+
+    def test_existing_code_scanning_ruleset_is_never_overwritten(self):
+        responses = [(True, [{'id': 123, 'name': security.CODE_SCANNING_RULESET['name']}], ''),
+                     (True, {'enforcement': 'disabled'}, '')]
+        with patch.object(security, 'api', side_effect=responses) as api:
+            self.assertFalse(security.check_code_scanning(apply=True))
+        self.assertTrue(all(call.args[0] == 'GET' for call in api.call_args_list))
+
 
 if __name__ == '__main__':
     unittest.main()

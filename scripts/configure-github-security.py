@@ -25,6 +25,14 @@ PROTECTION = {
     'allow_deletions': False,
     'required_conversation_resolution': True,
 }
+CODE_SCANNING_RULESET = {
+    'name': 'CodeQL security gate for main',
+    'target': 'branch', 'enforcement': 'active', 'bypass_actors': [],
+    'conditions': {'ref_name': {'include': ['refs/heads/main'], 'exclude': []}},
+    'rules': [{'type': 'code_scanning', 'parameters': {'code_scanning_tools': [{
+        'tool': 'CodeQL', 'security_alerts_threshold': 'medium_or_higher', 'alerts_threshold': 'errors',
+    }]}}],
+}
 SETTINGS = [
     ('Squash-merge og opprydding', 'PATCH', BASE, {
         'delete_branch_on_merge': True,
@@ -100,6 +108,36 @@ def contains_settings(actual, expected):
     return type(actual) is type(expected) and actual == expected
 
 
+def code_scanning_sufficient(current):
+    if (current.get('target') != 'branch' or current.get('enforcement') != 'active'
+            or current.get('bypass_actors') != []
+            or current.get('conditions') != CODE_SCANNING_RULESET['conditions']):
+        return False
+    return any(tool.get('tool') == 'CodeQL'
+               and tool.get('security_alerts_threshold') in ('medium_or_higher', 'all')
+               and tool.get('alerts_threshold') in ('errors', 'errors_and_warnings', 'all')
+               for rule in current.get('rules', []) if rule.get('type') == 'code_scanning'
+               for tool in rule.get('parameters', {}).get('code_scanning_tools', []))
+
+
+def check_code_scanning(apply=False):
+    endpoint = f'{BASE}/rulesets'
+    ok, rulesets, _ = api('GET', endpoint + '?per_page=100')
+    if not ok or not isinstance(rulesets, list):
+        return False
+    matches = [rule for rule in rulesets if rule.get('name') == CODE_SCANNING_RULESET['name']]
+    if not matches and apply:
+        ok, created, _ = api('POST', endpoint, CODE_SCANNING_RULESET)
+        if not ok or not created.get('id'):
+            return False
+        matches = [created]
+    if len(matches) != 1 or not matches[0].get('id'):
+        return False
+    # Read back; never overwrite an existing ruleset or weaken its thresholds.
+    ok, current, _ = api('GET', f'{endpoint}/{matches[0]["id"]}')
+    return ok and code_scanning_sufficient(current)
+
+
 def verify():
     failures = []
     for label, _, endpoint, data in SETTINGS:
@@ -115,6 +153,10 @@ def verify():
     print(f'{"OK" if valid else "FEIL"}: Grenbeskyttelse')
     if not valid:
         failures.append('Grenbeskyttelse')
+    valid = check_code_scanning()
+    print(f'{"OK" if valid else "FEIL"}: CodeQL-funn sperrer fletting')
+    if not valid:
+        failures.append('CodeQL-regelsett')
     return failures
 
 
@@ -126,7 +168,8 @@ def main():
     mode.add_argument('--check', action='store_true', help='Les og kontroller innstillinger uten å endre noe.')
     args = parser.parse_args()
     if args.plan:
-        print(json.dumps({'repository': REPOSITORY, 'settings': SETTINGS, 'main_protection': PROTECTION}, indent=2))
+        print(json.dumps({'repository': REPOSITORY, 'settings': SETTINGS,
+                          'main_protection': PROTECTION, 'code_scanning_ruleset': CODE_SCANNING_RULESET}, indent=2))
         return 0
 
     ok, repository, _ = api('GET', BASE)
@@ -169,6 +212,9 @@ def main():
         print('FEIL: Grenbeskyttelse er utilgjengelig eller har eksisterende regler som må gjennomgås manuelt. Ingen regler er overskrevet.')
         failures.append('Grenbeskyttelse')
 
+    if not check_code_scanning(apply=True):
+        print('FEIL: CodeQL-regelsett kunne ikke opprettes eller har avvik. Eksisterende regler er ikke overskrevet.')
+        failures.append('CodeQL-regelsett')
     failures.extend(verify())
     if failures:
         print('Ikke fullført: ' + ', '.join(failures))
