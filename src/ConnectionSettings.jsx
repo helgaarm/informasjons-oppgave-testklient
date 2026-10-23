@@ -2,12 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { TASK_ENDPOINT } from '../shared/task.js';
 
 const guide = 'https://utviklerportal.nhn.no/informasjonstjenester/helseid/helseid-selvbetjening/test-token-tjenesten/docs/test-token-tjenesten_enmd';
-// Suggestions from the verified TTT setup. Existing settings take precedence;
-// the user supplies their own API key and saves before these values are used.
+// Suggest only API-wide values. The user supplies their own API key and test
+// organization; existing settings take precedence.
 const suggestions = {
   audience: 'nhn:helsenorge.eksternapi',
   scope: 'nhn:helsenorge.eksternapi/Oppgave',
-  parent: '313231593',
 };
 const missingLabels = {
   HELSEID_TTT_API_KEY: 'API-nøkkel', HELSEID_TTT_AUDIENCE: 'API-mottaker (audience)',
@@ -27,7 +26,7 @@ function SetupField({ name, label, hint, error, ...props }) {
 
 function TestTokenSetup({ auth, busy, connect, saveSettings }) {
   const [values, setValues] = useState(() => ({ apiKey: '', audience: auth.audience || suggestions.audience,
-    scope: auth.scope || suggestions.scope, parent: auth.parent || suggestions.parent, child: auth.child || '' }));
+    scope: auth.scope || suggestions.scope, parent: auth.parent || '', child: auth.child || '' }));
   const [changed, setChanged] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [errors, setErrors] = useState({});
@@ -70,7 +69,7 @@ function TestTokenSetup({ auth, busy, connect, saveSettings }) {
   return <div className="connection-grid">
     <section className="card settings-card connection-setup" aria-labelledby="setup-heading">
       <div className="connection-card-heading"><div><p className="eyebrow">KOM I GANG</p><h2 id="setup-heading">Koble til i tre steg</h2></div><span className="connection-tag">Test-token-tjenesten</span></div>
-      <p className="connection-intro">Lim inn din egen API-nøkkel. Tomme felt for virksomhet og tilgang er fylt inn med forslag for Helsenorge test02. Kontroller verdiene og lagre oppsettet.</p>
+      <p className="connection-intro">Lim inn din egen API-nøkkel og oppgi organisasjonsnummeret til testvirksomheten du har tilgang til. API-mottaker og tilgang har forslag for Helsenorge test02. Kontroller verdiene og lagre oppsettet.</p>
       {!auth.editable && <div className="connection-feedback error" role="status"><strong>Feltene er låst fordi serveren må oppdateres.</strong><p>Stopp appen med <kbd>Ctrl+C</kbd> i terminalen, og start den igjen med <code>npm run dev</code>. Last så nettlesersiden på nytt. Da kan du lime inn API-nøkkelen.</p></div>}
       <form ref={form} onSubmit={save}>
         <fieldset disabled={!!busy || !auth.editable} className="editor-fieldset">
@@ -85,12 +84,12 @@ function TestTokenSetup({ auth, busy, connect, saveSettings }) {
               </div>
             </li>
             <li>
-              <div className="connection-step-heading"><span className={`connection-step-number ${detailsReady ? 'complete' : ''}`} aria-hidden="true">2</span><div><h3>Kontroller virksomhet og tilgang</h3><p>Du kan bruke forslagene under eller endre dem for ditt testoppsett. Lagrede verdier beholdes.</p></div></div>
+              <div className="connection-step-heading"><span className={`connection-step-number ${detailsReady ? 'complete' : ''}`} aria-hidden="true">2</span><div><h3>Fyll inn virksomhet og kontroller tilgang</h3><p>Bruk din egen testvirksomhet. Kontroller forslagene for API-mottaker og tilgang. Lagrede verdier beholdes.</p></div></div>
               <div className="connection-step-body">
-                <SetupField name="parent" label="Virksomhetens organisasjonsnummer" required inputMode="numeric" pattern="[0-9]{9}" {...input('parent', 9)} placeholder={suggestions.parent} hint={`Forslag: ${suggestions.parent}. Endre nummeret hvis du skal bruke en annen testvirksomhet.`} />
+                <SetupField name="parent" label="Virksomhetens organisasjonsnummer" required inputMode="numeric" pattern="[0-9]{9}" {...input('parent', 9)} placeholder="9 siffer" hint="Oppgi organisasjonsnummeret til testvirksomhetens hovedenhet. Bruk en virksomhet du har tilgang til i HelseID test." />
                 <SetupField name="audience" label="API-mottaker (audience)" required {...input('audience', 512)} placeholder={suggestions.audience} hint={`Forslag for Helsenorge test02: ${suggestions.audience}.`} />
                 <SetupField name="scope" label="Tilgang (scope)" required {...input('scope', 2048)} placeholder={suggestions.scope} hint={`Forslag for Oppgave: ${suggestions.scope}. Flere scope skilles med mellomrom.`} />
-                <details className="connection-help"><summary>Når bør jeg endre forslagene?</summary><p>Endre organisasjonsnummeret hvis du skal teste med en annen virksomhet. Bruk andre verdier for API-mottaker eller tilgang hvis NHN har gitt deg et annet oppsett. Forslagene er brukt til å hente et testtoken; tilgang til Helsenorge test02 kontrolleres først ved innsending.</p></details>
+                <details className="connection-help"><summary>Når bør jeg endre forslagene?</summary><p>Bruk andre verdier for API-mottaker eller tilgang hvis NHN har gitt deg et annet oppsett. Forslagene er brukt til å hente et testtoken; tilgang til Helsenorge test02 kontrolleres først ved innsending.</p></details>
                 <details className="connection-help"><summary>Underenhet (valgfritt)</summary><SetupField name="child" label="Underenhetens organisasjonsnummer" inputMode="numeric" pattern="[0-9]{9}" {...input('child', 9)} placeholder="9 siffer" hint="Fyll bare ut hvis testsituasjonen krever en underenhet." /></details>
               </div>
             </li>
