@@ -51,11 +51,12 @@ TTT utsteder testtoken signert med samme signeringsnøkkel som HelseID test.
 1. Logg inn i [HelseID Selvbetjening test → Integrasjonstesting](https://selvbetjening.test.nhn.no/ttt).
    Velg hvem du representerer og generer en TTT-API-nøkkel.
 2. Åpne **Tilkobling** i appen og lim inn din egen API-nøkkel i det skjulte nøkkelfeltet.
-3. Kontroller de forhåndsutfylte forslagene: organisasjonsnummer `313231593`,
-   audience `nhn:helsenorge.eksternapi` og scope `nhn:helsenorge.eksternapi/Oppgave`.
-   Endre dem hvis du skal bruke en annen testvirksomhet eller har fått et annet
-   oppsett fra NHN. Eksisterende verdier beholdes. API-nøkkel og underenhet har
-   ingen forslag. De øvrige forslagene finnes også i `.env.example`.
+3. Oppgi organisasjonsnummeret til en testvirksomhet du har tilgang til i HelseID
+   test (hovedenheten). Appen foreslår ikke en virksomhet. Kontroller forslagene
+   for audience `nhn:helsenorge.eksternapi` og scope `nhn:helsenorge.eksternapi/Oppgave`,
+   og endre dem hvis NHN har gitt deg et annet oppsett. Eksisterende verdier beholdes.
+   API-nøkkel, organisasjonsnummer og underenhet har ingen forslag. Forslagene for
+   audience og scope finnes også i `.env.example`.
 4. Velg **Lagre oppsett**, deretter **Test tilkobling**. Lagrede endringer tas i
    bruk med én gang, uten omstart. Testen sender ingen oppgave til Helsenorge.
 
