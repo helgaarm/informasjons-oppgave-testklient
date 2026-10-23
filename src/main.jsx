@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { newTask, exampleTask, getAt, setAt, validateTask, SYSTEMS, AREAS } from '../shared/task.js';
 import { submissionMessage } from '../shared/submission-feedback.js';
 import { DEFAULT_ENVIRONMENT, TEST_ENVIRONMENTS, getTestEnvironment } from '../shared/environments.js';
+import { postJson, requireSubmissionResult, UnconfirmedResponseError } from './api.js';
 import FieldEditor from './FieldEditor.jsx';
 import ConnectionSettings from './ConnectionSettings.jsx';
 import './styles.css';
@@ -56,6 +57,7 @@ function App() {
   const submissionKey = JSON.stringify([environmentId, identifier]);
   const deliveryBlocked = blockedSubmissions.has(submissionKey);
   const fileInput = useRef(null);
+  const applyingJson = useRef(false);
   const activeTask = useRef(task);
   activeTask.current = task;
   useEffect(() => {
@@ -66,13 +68,7 @@ function App() {
     const handler = e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
     window.addEventListener('beforeunload', handler); return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
-  async function api(path, payload) {
-    if (!config) throw new Error('Vent til den lokale serveren er klar.');
-    const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': config.csrf }, body: JSON.stringify(payload) });
-    const data = await response.json();
-    if (!response.ok && !Object.hasOwn(data, 'ok')) { const e = new Error(data.error || 'Forespørselen feilet.'); e.issues = data.issues; e.code = data.code; e.fields = data.fields; throw e; }
-    return data;
-  }
+  const api = (path, payload) => postJson(path, payload, config);
   function edit(next) { setTask(next); setDirty(true); setServerIssues(null); setResult(null); setConfirmed(false); }
   function changeEnvironment(id) {
     setEnvironmentId(id); setConfirmed(false); setNotice(null);
@@ -105,12 +101,27 @@ function App() {
   }
   async function importFile(event) {
     const file = event.target.files?.[0]; event.target.value = '';
-    if (!file) return;
+    if (!file || busy || applyingJson.current) return;
     if (file.size > 1024 * 1024) { setNotice({ error: true, text: 'Filen er for stor. Maksimal filstørrelse er 1 MB.' }); return; }
     setBusy('import');
     try { const { task: imported } = await api('/api/tasks/import', { text: await file.text() }); replace(imported, `${file.name} er lastet inn. Kontroller feltene før innsending.`); }
     catch (e) { setNotice({ error: true, text: e.message }); }
     finally { setBusy(''); }
+  }
+  async function applyJson() {
+    if (busy || applyingJson.current) return;
+    applyingJson.current = true;
+    setBusy('json');
+    try {
+      const imported = await api('/api/tasks/import', { text: jsonDraft ?? JSON.stringify(task) });
+      edit(imported.task); setJsonDraft(null);
+      setNotice({ text: 'JSON-endringene er brukt i alle felt.' });
+    } catch (e) {
+      setNotice({ error: true, text: `JSON kunne ikke brukes: ${e.message}` });
+    } finally {
+      applyingJson.current = false;
+      setBusy('');
+    }
   }
   function download() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(task, null, 2)], { type: 'application/fhir+json' }));
@@ -147,13 +158,19 @@ function App() {
       if (response.ok || response.deliveryUnknown) setBlockedSubmissions(keys => new Set([...keys, sentKey]));
     };
     try {
-      const response = await api('/api/tasks/send', { task, environment: sentEnvironment, confirmTestData: confirmed });
+      const response = requireSubmissionResult(await api('/api/tasks/send', { task, environment: sentEnvironment, confirmTestData: confirmed }), sentEnvironment);
       record(response);
       setNotice({ error: !response.ok, text: submissionMessage(response) });
     } catch (e) {
-      setNotice({ error: true, text: e.message });
-      if (e.issues) { setServerIssues(e.issues); setPreview('validation'); }
-      if (e.code === 'delivery_unknown') record({ ok: false, deliveryUnknown: true, environment: sentEnvironment, body: e.message });
+      if (e.code === 'delivery_unknown' || e instanceof UnconfirmedResponseError) {
+        const response = { ok: false, deliveryUnknown: true, environment: sentEnvironment,
+          body: e instanceof UnconfirmedResponseError ? 'Svaret fra serveren mangler eller kunne ikke leses. Oppgaven kan være mottatt av Helsenorge. Innsendingen gjentas ikke automatisk.' : e.message };
+        record(response);
+        setNotice({ error: true, text: submissionMessage(response) });
+      } else {
+        setNotice({ error: true, text: e.message });
+        if (e.issues) { setServerIssues(e.issues); setPreview('validation'); }
+      }
     }
     finally { setBusy(''); fetch('/api/config').then(r => r.json()).then(setConfig).catch(() => {}); }
   }
@@ -209,7 +226,7 @@ function App() {
                 <details className="advanced-detail"><summary>Hvem kan utføre oppgaven?</summary><p>Uten overstyring gjelder Helsenorges standardregler. Avklar bruk av kodene med NHN.</p>{[['1', 'Kun innbygger selv'], ['2', 'Foreldre til barn under 12 år'], ['3', 'Foreldre til barn 12–15 år'], ['4', 'Fullmakt – ikke samtykkekompetent'], ['5', 'Ordinær fullmakt, samt innbygger selv'], ['6', 'Innbygger med adressesperre'], ['7', 'Innbygger selv 13–15 år']].map(([value, label]) => <label className="checkbox-label" key={value}><input type="checkbox" checked={securities.some(s => s.system === SYSTEMS.execution && s.code === value)} onChange={e => { const next = securities.filter(s => !(s.system === SYSTEMS.execution && s.code === value)); if (e.target.checked) next.push({ system: SYSTEMS.execution, code: value, display: label }); edit(setAt(task, ['meta', 'security'], next)); }} /><span>{value} · {label}</span></label>)}</details>
               </>}
               {tab === 3 && <><div className="section-heading"><div><h2>Alle FHIR-felt</h2><p>Rediger hele ressursen feltvis, inkludert lister, extensions og input.</p></div><Icon name="code" /></div><div className="info-panel compact"><Icon name="info" /><p>Feltlisten følger FHIR R4. Helsenorge støtter et utvalg av feltene. Importerte attributter bevares når du redigerer andre felt.</p></div>{schema ? <FieldEditor value={task} onChange={edit} schema={schema} /> : <p>Laster FHIR-felt …</p>}</>}
-              {tab === 4 && <><div className="section-heading"><div><h2>FHIR Task som JSON</h2><p>Endringer brukes først når du velger «Bruk JSON».</p></div><Icon name="code" /></div><textarea className="json-editor" aria-label="FHIR Task JSON" spellCheck={false} value={jsonDraft ?? JSON.stringify(task, null, 2)} onChange={e => { setJsonDraft(e.target.value); setDirty(true); }} /><div className="button-row"><button className="button primary" onClick={async () => { try { const imported = await api('/api/tasks/import', { text: jsonDraft ?? JSON.stringify(task) }); edit(imported.task); setJsonDraft(null); setNotice({ text: 'JSON-endringene er brukt i alle felt.' }); } catch (e) { setNotice({ error: true, text: `JSON kunne ikke brukes: ${e.message}` }); } }}>Bruk JSON</button><button className="button secondary" disabled={!hasJsonChanges} onClick={() => setJsonDraft(null)}>Forkast JSON-endringer</button></div></>}
+              {tab === 4 && <><div className="section-heading"><div><h2>FHIR Task som JSON</h2><p>Endringer brukes først når du velger «Bruk JSON».</p></div><Icon name="code" /></div><textarea className="json-editor" aria-label="FHIR Task JSON" spellCheck={false} value={jsonDraft ?? JSON.stringify(task, null, 2)} onChange={e => { setJsonDraft(e.target.value); setDirty(true); }} /><div className="button-row"><button className="button primary" disabled={!config} onClick={applyJson}>{busy === 'json' ? 'Behandler JSON …' : 'Bruk JSON'}</button><button className="button secondary" disabled={!hasJsonChanges} onClick={() => setJsonDraft(null)}>Forkast JSON-endringer</button></div></>}
               </fieldset>
               {tab < 3 && <div className="card-footer"><span><span className="required">*</span> Obligatoriske felt</span><button className="text-button" onClick={() => setTab(tab + 1)} disabled={!!busy}>{tab === 2 ? 'Se alle FHIR-felt' : 'Neste steg'}<Icon name="arrow" size={18} /></button></div>}
             </section>
