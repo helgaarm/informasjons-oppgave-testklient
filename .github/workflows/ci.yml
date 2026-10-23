@@ -23,18 +23,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [22, 24]
+        include:
+          - node: 22
+            version: 22.19.0
+          - node: 24
+            version: 24
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ matrix.node }}
+          node-version: ${{ matrix.version }}
           package-manager-cache: false
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run build
+      - name: Install Chromium for browser regressions
+        if: matrix.node == 24
+        run: npx playwright install --with-deps chromium
+      - name: Test browser regressions with local mocks
+        if: matrix.node == 24
+        run: npm run test:ui
       - name: Test repository security administration
         if: matrix.node == 24
         run: python3 -m unittest discover -s tests -p 'test_*.py'

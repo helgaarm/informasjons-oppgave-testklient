@@ -17,7 +17,7 @@ Dependabot, CodeQL og aktivering av repoets sikkerhetsinnstillinger.
 
 ## Start prosjektet
 
-Krever Node.js 22 eller nyere og npm.
+Krever Node.js **22.19.0 eller nyere** og npm. Bruk en oppdatert LTS-versjon.
 
 ```bash
 cd informasjons-oppgave-testklient
@@ -233,8 +233,11 @@ Helsenorges endelige vurdering av testpersonens status/alder, tjenesteområde,
 kodeverk, representasjon, lenkeinnhold, klienttilgang eller delegering. Ingen
 automatisk aldersutledning eller fødselsnummerkontrollsum benyttes for testpersoner.
 
-Innsending gjentas ikke automatisk ved timeout eller nettverksbrudd. Ukjent
-leveringsstatus må undersøkes i området som vises i responsen før nytt forsøk.
+Innsending gjentas ikke automatisk ved timeout eller nettverksbrudd. Hvis
+nettleseren mister svaret fra den lokale serveren, eller ikke kan lese det,
+vises ukjent leveringsstatus i responsen og historikken. Ny innsending av samme
+identifikator til samme område sperres i nettleserfanen. Kontroller oppgaven i
+området som vises i responsen før du oppretter en ny oppgave.
 Vellykket innsending og ukjent status sperrer samme forretningsidentifikator i
 samme testområde i serverøkten. Samme identifikator kan testes i det andre området;
 bytte tilbake eller redigering av innhold opphever ikke sperren. Dette er en
@@ -247,7 +250,19 @@ ikke at innbygger har lest informasjonen.
 ```bash
 npm test
 npm run build
+npx playwright install chromium
+npm run test:ui
 ```
+
+Nettlesertestene kjører mot en egen lokal mock-server med syntetiske oppgaver,
+uten å lese `.env` eller det lagrede tilkoblingsoppsettet. De dekker tapt og
+uleselig svar etter innsending, avvisninger som kan rettes, og låsing av
+JSON-editoren under behandling. Eksterne nettleserforespørsler blokkeres.
+På Linux/CI kan nødvendige nettleserpakker installeres med
+`npx playwright install --with-deps chromium`. For å bruke installert Edge i
+PowerShell: `$env:PLAYWRIGHT_CHANNEL='msedge'; npm run test:ui`.
+CI tester minimumsversjonen Node.js 22.19.0 og Node.js 24, og kjører
+nettlesertestene med Chromium på Node.js 24.
 
 Testene bruker lokale HTTP-servere, midlertidige konfigurasjonsfiler, genererte engangsnøkler og mock av eksterne
 tjenester. De tester lokal lagring, feltvalidering, nøkkelbytte og samtidige kall,
