@@ -96,3 +96,49 @@ test('multi-tenant organization selection is included only when configured', () 
   const identifier = multi.authorizationDetails()[0].practitioner_role.organization.identifier;
   assert.equal(identifier.value, 'NO:ORGNR:123456789:987654321'); assert.equal(identifier.system, 'urn:oid:1.0.6523');
 });
+
+test('selected target determines the API URL and signed DPoP htu, with isolated nonces', async t => {
+  const endpoints = {
+    test01: 'https://eksternapi.hn.test.nhn.no/oppgave/v1/Task',
+    test02: 'https://eksternapi.hn2.test.nhn.no/oppgave/v1/Task',
+  };
+  const calls = [], challenges = new Set();
+  const { client, publicKey } = await setup(t, async (url, options) => {
+    const environment = Object.keys(endpoints).find(id => endpoints[id] === url);
+    assert.ok(environment, 'Only fixed Helsenorge test URLs are allowed');
+    const { payload } = await jwtVerify(options.headers.DPoP, publicKey);
+    assert.equal(payload.htu, url);
+    assert.equal(payload.htm, 'POST');
+    assert.equal(options.redirect, 'error');
+    calls.push({ environment, jti: payload.jti });
+    if (!challenges.has(environment)) {
+      assert.equal(payload.nonce, undefined, 'A nonce from another environment must not be sent');
+      challenges.add(environment);
+      return json({}, 401, { 'DPoP-Nonce': `nonce-${environment}`, 'WWW-Authenticate': 'DPoP error="use_dpop_nonce"' });
+    }
+    assert.equal(payload.nonce, `nonce-${environment}`);
+    return json({}, 201);
+  });
+  client.token = { value: 'fixture-token', expiresAt: Date.now() + 300000 };
+  // Simultaneous destinations must not overwrite one another, including nonce retries.
+  const results = await Promise.all(['test01', 'test02'].map(id => client.sendTask(exampleTask(), id, id)));
+  assert.deepEqual(results.map(r => r.environment), ['test01', 'test02']);
+  for (const id of ['test02', 'test01']) assert.equal((await client.sendTask(exampleTask(), id, id)).status, 201);
+  assert.equal(calls.length, 6);
+  assert.equal(new Set(calls.map(call => call.jti)).size, 6);
+});
+
+test('unsupported targets fail before token acquisition and never cause network calls', async () => {
+  const client = new HelseIdClient(configuration({}), () => assert.fail('No network expected'));
+  for (const environment of ['prod', 'https://untrusted.example', null, ['test01'], '__proto__']) {
+    await assert.rejects(client.sendTask(exampleTask(), 'id', environment), e => e.code === 'invalid_environment' && e.status === 400);
+  }
+});
+
+test('uncertain delivery names the selected environment and is not retried', async t => {
+  let calls = 0;
+  const { client } = await setup(t, () => { calls++; throw new Error('network lost'); });
+  client.token = { value: 'fixture-token', expiresAt: Date.now() + 300000 };
+  await assert.rejects(client.sendTask(exampleTask(), 'id', 'test01'), e => e.code === 'delivery_unknown' && /Test01/.test(e.message) && !/test02/i.test(e.message));
+  assert.equal(calls, 1);
+});

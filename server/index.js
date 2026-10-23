@@ -16,7 +16,7 @@ const app = createApp({ origin: process.env.APP_ORIGIN || `http://localhost:${po
   client: settings.client, saveSettings: settings.save });
 const vite = await attachBrowserAssets(app, { root, dev });
 const server = app.listen(port, host);
-server.once('listening', () => console.log(`Testklient: http://localhost:${port} · Helsenorge test02`));
+server.once('listening', () => console.log(`Testklient: http://localhost:${port} · Helsenorge Test01 / Test02`));
 server.once('error', async error => {
   console.error(error.code === 'EADDRINUSE'
     ? `Kunne ikke starte: port ${port} er opptatt. Stopp den gamle appserveren og prøv igjen.`

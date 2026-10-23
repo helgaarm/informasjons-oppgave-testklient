@@ -1,5 +1,7 @@
-export const ENVIRONMENT = 'test02';
-export const TASK_ENDPOINT = 'https://eksternapi.hn2.test.nhn.no/oppgave/v1/Task';
+import { DEFAULT_ENVIRONMENT, getTestEnvironment } from './environments.js';
+
+export const ENVIRONMENT = DEFAULT_ENVIRONMENT;
+export const TASK_ENDPOINT = getTestEnvironment(DEFAULT_ENVIRONMENT).endpoint;
 export const ISSUER = 'https://helseid-sts.test.nhn.no';
 export const SYSTEMS = {
   uuid: 'urn:ietf:rfc:3986',

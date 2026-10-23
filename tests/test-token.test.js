@@ -95,6 +95,32 @@ test('TTT authenticates without registered keys and sends fresh DPoP proofs, inc
   assert.equal(client.key.extractable, false);
 });
 
+test('TTT uses the selected environment for the API request and DPoP proof', async () => {
+  const targets = [
+    ['test01', 'https://eksternapi.hn.test.nhn.no/oppgave/v1/Task'],
+    ['test02', 'https://eksternapi.hn2.test.nhn.no/oppgave/v1/Task'],
+  ];
+  let tokenCalls = 0, apiCalls = 0;
+  const client = createHelseIdClient(config(), async (url, options) => {
+    if (url === TEST_TOKEN_ENDPOINT) {
+      tokenCalls++;
+      return json(await tokenResponse(JSON.parse(options.body)));
+    }
+    assert.equal(url, targets[apiCalls++][1]);
+    const { payload } = await jwtVerify(options.headers.DPoP, client.verificationKey);
+    assert.equal(payload.htu, url);
+    assert.equal(options.headers['X-Auth-Key'], undefined);
+    return json({}, 201);
+  });
+  for (const [id] of targets) {
+    const result = await client.sendTask(exampleTask(), 'id', id);
+    assert.equal(result.status, 201);
+    assert.equal(result.environment, id);
+  }
+  assert.equal(tokenCalls, 1);
+  assert.equal(apiCalls, 2);
+});
+
 test('TTT rejects mismatched token claims and DPoP bindings before sending any Task', async () => {
   const invalidCases = [
     { 'helseid://claims/client/client_tenancy': undefined },

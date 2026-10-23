@@ -30,3 +30,11 @@ test('submission messages preserve success, unknown delivery and other rejection
   }
   assert.match(submissionMessage({ ...rejected('client tenancy is unknown'), status: 403 }), /HTTP 403/);
 });
+
+test('receipt and unknown-delivery messages name their original test area without echoing arbitrary input', () => {
+  for (const [environment, label] of [['test01', 'Test01'], ['test02', 'Test02']]) {
+    assert.equal(submissionMessage({ ok: true, environment }), `Oppgaven er mottatt av Helsenorge ${label}.`);
+    assert.match(submissionMessage({ deliveryUnknown: true, environment }), new RegExp(label));
+  }
+  assert.doesNotMatch(submissionMessage({ ok: true, environment: 'untrusted-value' }), /untrusted-value/);
+});

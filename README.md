@@ -1,7 +1,7 @@
 # informasjons-oppgave-testklient
 
 Lokal webklient for å opprette og sende **FHIR R4 Task / Communication** til en
-testinnbygger i **Helsenorge test02**. React-grensesnittet bruker NHNs offisielle
+testinnbygger i **Helsenorge Test01 eller Test02**. React-grensesnittet bruker NHNs offisielle
 grønnfarger og Arial, profilens systemfont. Dette er en uavhengig testklient.
 
 ## Lisens
@@ -110,7 +110,7 @@ HTTP 401 med `invalid_client` kan ha flere årsaker. «clientid is not valid» g
 klient-ID-en, mens «client tenancy is unknown» gjelder klienttypen. Appen viser
 ulike forklaringer for disse feilene. Tidligere versjoner utelot disse feltene
 fra TTT-forespørselen. Hvis feilen fortsetter med korrekte klientopplysninger,
-avklar godkjent klient og tilgang til Oppgave i test02 med NHN.
+avklar godkjent klient og tilgang til Oppgave i valgt testområde med NHN.
 
 Se [NHNs oversikt over klientclaims](https://utviklerportal.nhn.no/informasjonstjenester/helseid/bruksmoenstre-og-eksempelkode/bruk-av-helseid/docs/teknisk-referanse/claims_nb_nomd/)
 og [TTT-definisjonen av klienttype](https://github.com/NorskHelsenett/HelseID.Samples/blob/master/Utilities/TestTokenTool/RequestModel/ClientTenancyType.cs).
@@ -158,7 +158,7 @@ HelseID test. DPoP nonce-utfordringer håndteres. Eksisterende oppsett med
    Import støtter én Task i JSON eller FHIR XML, maksimalt 1 MB. Bundle importeres
    ikke som en enkelt oppgave. Eksempelet har ingen forhåndsvalgt testperson.
 2. Fyll inn tittel, beskrivelse, fullstendig informasjonslenke og hensikt.
-3. Angi en testperson som er aktiv i test02, og avsender med kontaktinformasjon.
+3. Angi en testperson som er aktiv i testområdet du skal bruke, og avsender med kontaktinformasjon.
 4. Angi svarfrist, tjenesteområde og relevante sikkerhetskoder. Innsynskode for
    ungdom/foreldre skal angis for testpersoner mellom 12 og 15 år.
 5. Bruk **Alle FHIR-felt** til resten av R4-attributtene: identifikatorer,
@@ -168,9 +168,19 @@ HelseID test. DPoP nonce-utfordringer håndteres. Eksisterende oppsett med
    slik choice om gangen.
 6. JSON-fanen viser samme ressurs. Velg **Bruk JSON** før videre redigering,
    eksport eller innsending. Importerte attributter bevares ved feltvise endringer.
-7. Velg **Valider**, kontroller mottaker og innhold, bekreft testdata og velg
-   **Send til test02**. Responsfanen viser HTTP-status, Location, korrelasjons-ID
-   og API-respons, inkludert eventuell OperationOutcome.
+7. Velg **Testområde på Helsenorge** ved sendeknappen: **Test01** eller **Test02**
+   (standard). Velg **Valider**, kontroller mottaker og innhold, bekreft testdata
+   for valgt område og trykk **Send til Test01/Test02**. Bytter du område, må du
+   bekrefte på nytt. Responsfanen og historikken viser området som faktisk ble
+   brukt. Responsen viser også HTTP-status, Location, korrelasjons-ID og
+   API-respons, inkludert eventuell OperationOutcome.
+
+Test02 er det vanlige området for integrasjonstesting mot gjeldende tjenester.
+Test01 brukes til ny funksjonalitet og kan være mindre stabilt. Se
+[NHNs beskrivelse av testområdene](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1552384092).
+Klienten bruker HelseID test for begge; virksomhet, klient og testperson må ha
+nødvendig tilgang/status i området du velger. Miljøvalget endrer ikke tilgangen.
+Valget gjelder denne nettleserfanen og går tilbake til Test02 ved ny sidelasting.
 
 Innholdsvisningen er en forhåndsvisning av oppgaveteksten, ikke en nøyaktig
 gjengivelse av Helsenorges GUI. **Last ned JSON** eksporterer hele utkastet.
@@ -186,8 +196,9 @@ rulles inni sitt eget område.
 
 | Innstilling | Verdi |
 | --- | --- |
-| Helsenorge-miljø | `test02` |
-| Innsending | `POST https://eksternapi.hn2.test.nhn.no/oppgave/v1/Task` |
+| Helsenorge-miljø | `test01` eller `test02` (standard) |
+| Innsending Test01 | `POST https://eksternapi.hn.test.nhn.no/oppgave/v1/Task` |
+| Innsending Test02 | `POST https://eksternapi.hn2.test.nhn.no/oppgave/v1/Task` |
 | Content-Type / Accept | `application/fhir+json` |
 | HelseID-issuer | `https://helseid-sts.test.nhn.no` |
 | API-autentisering | `Authorization: DPoP …` og eget `DPoP`-bevis |
@@ -201,6 +212,13 @@ rulles inni sitt eget område.
 
 Helsenorge setter oppgaven til utført ved første uthopp. Klienten implementerer
 oppretting, ikke endring eller kansellering av innsendte oppgaver.
+
+Det lokale API-et `POST /api/tasks/send` krever `{ task, environment, confirmTestData: true }`,
+der `environment` er nøyaktig `test01` eller `test02`. Manglende eller ukjent
+område avvises før tokenuthenting og innsending. Serveren velger fra faste
+endepunkter; klienten kan ikke angi en URL eller produksjon. DPoP-bevis signeres
+for valgt endepunkt, og API-noncer holdes adskilt per område. Etter oppdatering
+må serveren startes på nytt og nettlesersiden lastes på nytt.
 
 ## Validering og leveringsstatus
 
@@ -216,8 +234,10 @@ kodeverk, representasjon, lenkeinnhold, klienttilgang eller delegering. Ingen
 automatisk aldersutledning eller fødselsnummerkontrollsum benyttes for testpersoner.
 
 Innsending gjentas ikke automatisk ved timeout eller nettverksbrudd. Ukjent
-leveringsstatus må undersøkes i test02 før nytt forsøk. Vellykket innsending og
-ukjent status sperrer samme forretningsidentifikator i serverøkten; dette er en
+leveringsstatus må undersøkes i området som vises i responsen før nytt forsøk.
+Vellykket innsending og ukjent status sperrer samme forretningsidentifikator i
+samme testområde i serverøkten. Samme identifikator kan testes i det andre området;
+bytte tilbake eller redigering av innhold opphever ikke sperren. Dette er en
 lokal beskyttelse, ikke varig idempotens. Økten utløper etter 30 minutter og
 forsvinner ved serveromstart. HTTP 201/2xx betyr at API-et tok imot forespørselen,
 ikke at innbygger har lest informasjonen.
@@ -232,10 +252,10 @@ npm run build
 Testene bruker lokale HTTP-servere, midlertidige konfigurasjonsfiler, genererte engangsnøkler og mock av eksterne
 tjenester. De tester lokal lagring, feltvalidering, nøkkelbytte og samtidige kall,
 TTT-kontrakten, hemmelighold av nøkler/token, signaturer,
-DPoP nonce-flyt, tokenbinding, import/eksport,
+DPoP nonce-flyt, tokenbinding, valg av testområde, isolerte API-noncer, import/eksport,
 bevaring av felt, validering, CSRF, duplikater og ukjent leveringsstatus. De sender
 ingen oppgaver til Helsenorge. Reell HelseID-autentisering og innsending krever
-TTT-API-nøkkel eller registrert klient, samt riktige API-claims og tilgang i test02.
+TTT-API-nøkkel eller registrert klient, samt riktige API-claims og tilgang i valgt testområde.
 Tokenuthenting med TTT og kontroll av tokenets klientopplysninger, tidsangivelser og DPoP-binding ble manuelt verifisert
 mot HelseID test 2026-10-23, både direkte og gjennom appens tilkoblingstest
 (HTTP 200). Innsending og aksept i Helsenorge test02 er fortsatt ikke verifisert.
@@ -245,6 +265,13 @@ ugyldige JSON-strengen `{`, uten Task, mottaker eller melding. Token uten
 klienttype ga HTTP 401 med «client tenancy is unknown». Token med `single-tenant`
 ga i stedet HTTP 400 for den ugyldige forespørselen. Ingen oppgave ble opprettet;
 denne kontrollen erstatter ikke en test av en fullstendig innsending.
+
+Miljøvalget ble kontrollert i headless Edge 2026-10-23 med en lokal mock-server:
+Test02 som standard, bytte til Test01, ny bekreftelse ved bytte, låsing under
+innsending, duplikatsperrer per område, ukjent levering, miljø i respons og
+historikk, portal-lenker og sperre mot en eldre server uten miljøvalg. Oppgavesiden
+ble kontrollert ved 320, 390, 768, 1024, 1440 og 1920 pikslers bredde uten
+horisontal sideoverflyt eller JavaScript-feil. Ingen eksterne API-kall ble gjort.
 
 En tidligere versjon ble kontrollert i Chromium på 1440 og 390 pikslers bredde:
 feltredigering, JSON-endringer, bevaring av extensions, JSON-nedlasting, XML-import,

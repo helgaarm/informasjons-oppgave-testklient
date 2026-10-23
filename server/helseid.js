@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { createPrivateKey, createPublicKey, createHash, randomUUID } from 'node:crypto';
 import { SignJWT, exportJWK, decodeJwt, calculateJwkThumbprint } from 'jose';
-import { ISSUER, TASK_ENDPOINT } from '../shared/task.js';
+import { ISSUER } from '../shared/task.js';
+import { DEFAULT_ENVIRONMENT, getTestEnvironment } from '../shared/environments.js';
 
 export class IntegrationError extends Error {
   constructor(message, status = 502, code = 'integration_error') { super(message); this.status = status; this.code = code; }
@@ -39,7 +40,7 @@ export function missingConfiguration(config) {
 export class HelseIdClient {
   constructor(config, fetchImpl = globalThis.fetch) {
     this.config = config; this.fetch = fetchImpl; this.token = null; this.pending = null;
-    this.discovery = null; this.key = null; this.tokenNonce = undefined; this.apiNonce = undefined;
+    this.discovery = null; this.key = null; this.tokenNonce = undefined; this.apiNonces = new Map();
   }
   status() {
     const missing = missingConfiguration(this.config);
@@ -143,27 +144,30 @@ export class HelseIdClient {
     }
     throw new IntegrationError('HelseID kunne ikke fullføre DPoP-utfordringen.');
   }
-  async sendTask(task, correlationId) {
+  async sendTask(task, correlationId, environmentId = DEFAULT_ENVIRONMENT) {
+    const environment = getTestEnvironment(environmentId);
+    if (!environment) throw new IntegrationError('Velg Test01 eller Test02 før innsending.', 400, 'invalid_environment');
+    const { endpoint, label } = environment;
     const token = await this.getToken();
     for (let attempt = 0; attempt < 2; attempt++) {
-      const proof = await this.proof(TASK_ENDPOINT, 'POST', this.apiNonce, token.value);
+      const proof = await this.proof(endpoint, 'POST', this.apiNonces.get(environment.id), token.value);
       let response;
       try {
-        response = await this.request(TASK_ENDPOINT, { method: 'POST', headers: {
+        response = await this.request(endpoint, { method: 'POST', headers: {
           'Content-Type': 'application/fhir+json', Accept: 'application/fhir+json',
           Authorization: `DPoP ${token.value}`, DPoP: proof,
           'X-Correlation-ID': correlationId,
         }, body: JSON.stringify(task) });
-      } catch { throw new IntegrationError('Forbindelsen ble avbrutt under innsending. Leveringsstatus er ukjent. Kontroller oppgaven i test02 før et nytt forsøk.', 502, 'delivery_unknown'); }
+      } catch { throw new IntegrationError(`Forbindelsen ble avbrutt under innsending. Leveringsstatus er ukjent. Kontroller oppgaven i ${label} før et nytt forsøk.`, 502, 'delivery_unknown'); }
       const nonce = response.headers.get('dpop-nonce');
-      if (nonce) this.apiNonce = nonce;
+      if (nonce) this.apiNonces.set(environment.id, nonce);
       if (response.status === 401 && nonce && /use_dpop_nonce/.test(response.headers.get('www-authenticate') ?? '') && attempt === 0) { await response.body?.cancel(); continue; }
       let raw;
       try { raw = await readLimited(response); }
-      catch { throw new IntegrationError('Innsendingen fikk et ufullstendig svar. Leveringsstatus er ukjent; kontroller test02 før et nytt forsøk.', 502, 'delivery_unknown'); }
+      catch { throw new IntegrationError(`Innsendingen fikk et ufullstendig svar. Leveringsstatus er ukjent; kontroller ${label} før et nytt forsøk.`, 502, 'delivery_unknown'); }
       let body; try { body = JSON.parse(raw); } catch { body = raw; }
       if ([401, 403].includes(response.status)) this.token = null;
-      return { ok: response.ok, status: response.status, body,
+      return { ok: response.ok, status: response.status, body, environment: environment.id,
         location: response.headers.get('location'), correlationId,
         deliveryUnknown: response.status >= 500 || response.status === 408,
         receivedAt: new Date().toISOString() };
