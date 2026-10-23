@@ -2,6 +2,7 @@ import express from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { TASK_ENDPOINT, ENVIRONMENT } from '../shared/task.js';
+import { TEST_ENVIRONMENTS, getTestEnvironment } from '../shared/environments.js';
 import { validateResource, importTask, fieldSchema } from './fhir.js';
 import { IntegrationError } from './helseid.js';
 import { createHelseIdClient } from './auth.js';
@@ -63,7 +64,7 @@ export function createApp({ client = createHelseIdClient(), saveSettings, origin
     next();
   });
   app.use('/api', express.json({ limit: '2mb', strict: true }));
-  app.get('/api/config', (req, res) => res.json({ environment: ENVIRONMENT, endpoint: TASK_ENDPOINT,
+  app.get('/api/config', (req, res) => res.json({ environment: ENVIRONMENT, endpoint: TASK_ENDPOINT, environments: TEST_ENVIRONMENTS,
     csrf: req.session.csrf, auth: authStatus() }));
   app.get('/api/schema', (_req, res) => res.json(fieldSchema()));
   app.post('/api/auth/settings', async (req, res) => {
@@ -89,21 +90,23 @@ export function createApp({ client = createHelseIdClient(), saveSettings, origin
   });
   app.post('/api/tasks/send', async (req, res) => {
     if (savingSettings) throw new IntegrationError('Vent til oppsettet er lagret.', 409, 'settings_busy');
+    const environment = getTestEnvironment(req.body?.environment);
+    if (!environment) throw new IntegrationError('Velg Test01 eller Test02 før innsending.', 400, 'invalid_environment');
     const task = req.body?.task;
     const issues = validateResource(task);
     if (issues.some(i => i.severity === 'error')) return res.status(422).json({ error: 'Oppgaven har valideringsfeil.', issues });
     if (req.body?.confirmTestData !== true) return res.status(400).json({ error: 'Bekreft at oppgaven bruker testdata før innsending.' });
-    const key = createHash('sha256').update(task.identifier.find(i => i.system === 'urn:ietf:rfc:3986').value).digest('hex');
-    if (req.session.submissions.has(key)) return res.status(409).json({ error: 'Denne identifikatoren er allerede sendt eller har ukjent leveringsstatus i økten. Kontroller test02 før du oppretter en ny oppgave.' });
+    const key = createHash('sha256').update(JSON.stringify([environment.id, task.identifier.find(i => i.system === 'urn:ietf:rfc:3986').value])).digest('hex');
+    if (req.session.submissions.has(key)) return res.status(409).json({ error: `Denne identifikatoren er allerede sendt eller har ukjent leveringsstatus i ${environment.label} i økten. Kontroller ${environment.label} før du oppretter en ny oppgave.` });
     if (req.session.submissions.size >= 100) return res.status(429).json({ error: 'Økten har nådd grensen for innsendinger.' });
     req.session.submissions.set(key, 'pending');
     const correlationId = randomUUID();
     activeRequests++;
     try {
-      const result = await client.sendTask(task, correlationId);
+      const result = await client.sendTask(task, correlationId, environment.id);
       if (result.ok || result.deliveryUnknown) req.session.submissions.set(key, result.ok ? 'sent' : 'unknown');
       else req.session.submissions.delete(key);
-      res.status(result.ok ? 200 : 502).json(result);
+      res.status(result.ok ? 200 : 502).json({ ...result, environment: environment.id });
     } catch (e) {
       if (e.code !== 'delivery_unknown') req.session.submissions.delete(key);
       else req.session.submissions.set(key, 'unknown');

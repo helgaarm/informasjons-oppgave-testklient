@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { TASK_ENDPOINT } from '../shared/task.js';
+import { DEFAULT_ENVIRONMENT, getTestEnvironment } from '../shared/environments.js';
 
 const guide = 'https://utviklerportal.nhn.no/informasjonstjenester/helseid/helseid-selvbetjening/test-token-tjenesten/docs/test-token-tjenesten_enmd';
 // Suggest only API-wide values. The user supplies their own API key and test
@@ -24,7 +24,7 @@ function SetupField({ name, label, hint, error, ...props }) {
   </div>;
 }
 
-function TestTokenSetup({ auth, busy, connect, saveSettings }) {
+function TestTokenSetup({ auth, busy, connect, saveSettings, environment }) {
   const [values, setValues] = useState(() => ({ apiKey: '', audience: auth.audience || suggestions.audience,
     scope: auth.scope || suggestions.scope, parent: auth.parent || '', child: auth.child || '' }));
   const [changed, setChanged] = useState(false);
@@ -69,7 +69,7 @@ function TestTokenSetup({ auth, busy, connect, saveSettings }) {
   return <div className="connection-grid">
     <section className="card settings-card connection-setup" aria-labelledby="setup-heading">
       <div className="connection-card-heading"><div><p className="eyebrow">KOM I GANG</p><h2 id="setup-heading">Koble til i tre steg</h2></div><span className="connection-tag">Test-token-tjenesten</span></div>
-      <p className="connection-intro">Lim inn din egen API-nøkkel og oppgi organisasjonsnummeret til testvirksomheten du har tilgang til. API-mottaker og tilgang har forslag for Helsenorge test02. Kontroller verdiene og lagre oppsettet.</p>
+      <p className="connection-intro">Lim inn din egen API-nøkkel og oppgi organisasjonsnummeret til testvirksomheten du har tilgang til. API-mottaker og tilgang har forslag for Helsenorge test. Kontroller verdiene og lagre oppsettet.</p>
       {!auth.editable && <div className="connection-feedback error" role="status"><strong>Feltene er låst fordi serveren må oppdateres.</strong><p>Stopp appen med <kbd>Ctrl+C</kbd> i terminalen, og start den igjen med <code>npm run dev</code>. Last så nettlesersiden på nytt. Da kan du lime inn API-nøkkelen.</p></div>}
       <form ref={form} onSubmit={save}>
         <fieldset disabled={!!busy || !auth.editable} className="editor-fieldset">
@@ -87,9 +87,9 @@ function TestTokenSetup({ auth, busy, connect, saveSettings }) {
               <div className="connection-step-heading"><span className={`connection-step-number ${detailsReady ? 'complete' : ''}`} aria-hidden="true">2</span><div><h3>Fyll inn virksomhet og kontroller tilgang</h3><p>Bruk din egen testvirksomhet. Kontroller forslagene for API-mottaker og tilgang. Lagrede verdier beholdes.</p></div></div>
               <div className="connection-step-body">
                 <SetupField name="parent" label="Virksomhetens organisasjonsnummer" required inputMode="numeric" pattern="[0-9]{9}" {...input('parent', 9)} placeholder="9 siffer" hint="Oppgi organisasjonsnummeret til testvirksomhetens hovedenhet. Bruk en virksomhet du har tilgang til i HelseID test." />
-                <SetupField name="audience" label="API-mottaker (audience)" required {...input('audience', 512)} placeholder={suggestions.audience} hint={`Forslag for Helsenorge test02: ${suggestions.audience}.`} />
+                <SetupField name="audience" label="API-mottaker (audience)" required {...input('audience', 512)} placeholder={suggestions.audience} hint={`Forslag for Helsenorge test: ${suggestions.audience}.`} />
                 <SetupField name="scope" label="Tilgang (scope)" required {...input('scope', 2048)} placeholder={suggestions.scope} hint={`Forslag for Oppgave: ${suggestions.scope}. Flere scope skilles med mellomrom.`} />
-                <details className="connection-help"><summary>Når bør jeg endre forslagene?</summary><p>Bruk andre verdier for API-mottaker eller tilgang hvis NHN har gitt deg et annet oppsett. Forslagene er brukt til å hente et testtoken; tilgang til Helsenorge test02 kontrolleres først ved innsending.</p></details>
+                <details className="connection-help"><summary>Når bør jeg endre forslagene?</summary><p>Bruk andre verdier for API-mottaker eller tilgang hvis NHN har gitt deg et annet oppsett. Forslagene er brukt til å hente et testtoken; tilgang til valgt testområde på Helsenorge kontrolleres først ved innsending.</p></details>
                 <details className="connection-help"><summary>Underenhet (valgfritt)</summary><SetupField name="child" label="Underenhetens organisasjonsnummer" inputMode="numeric" pattern="[0-9]{9}" {...input('child', 9)} placeholder="9 siffer" hint="Fyll bare ut hvis testsituasjonen krever en underenhet." /></details>
               </div>
             </li>
@@ -117,26 +117,26 @@ function TestTokenSetup({ auth, busy, connect, saveSettings }) {
         <p className="connection-local-note">Du kan lage, validere og eksportere oppgaver før tilkoblingen er klar.</p>
       </section>
       <section className="card settings-card connection-help-card"><h2>Trenger du hjelp?</h2><p>Du trenger ingen registrert klient-ID eller egen privat nøkkelfil for denne metoden.</p><a href={guide} target="_blank" rel="noreferrer">Se NHNs veiledning <span aria-hidden="true">↗</span><span className="sr-only"> (åpnes i ny fane)</span></a></section>
-      <details className="card settings-card connection-technical"><summary>Tekniske detaljer</summary><dl className="settings-list"><div><dt>Metode</dt><dd>Test-token-tjenesten (TTT) · DPoP</dd></div><div><dt>Issuer</dt><dd>https://helseid-sts.test.nhn.no</dd></div>{auth.clientId && <div><dt>Klient-ID i testtoken</dt><dd>{auth.clientId}</dd></div>}{auth.clientTenancy && <div><dt>Klienttype</dt><dd>Én testvirksomhet ({auth.clientTenancy})</dd></div>}<div><dt>Mottaker-API</dt><dd>{TASK_ENDPOINT}</dd></div>{auth.expiresAt && <div><dt>Token utløper</dt><dd>{new Date(auth.expiresAt).toLocaleString('nb-NO')}</dd></div>}<div><dt>Lokal lagring</dt><dd><code>secrets/connection.json</code><br />Lagret skjemaoppsett overstyrer TTT-verdiene i <code>.env</code>.</dd></div></dl><p>Appen oppretter automatisk en klient-ID for testtokenet. Hvis NHN krever en bestemt test-ID, sett <code>HELSEID_TTT_CLIENT_ID</code> i <code>.env</code> og start serveren på nytt.</p><p>Fjern filen for å gå tilbake til oppsettet i <code>.env</code>, og start appen på nytt.</p></details>
+      <details className="card settings-card connection-technical"><summary>Tekniske detaljer</summary><dl className="settings-list"><div><dt>Metode</dt><dd>Test-token-tjenesten (TTT) · DPoP</dd></div><div><dt>Issuer</dt><dd>https://helseid-sts.test.nhn.no</dd></div>{auth.clientId && <div><dt>Klient-ID i testtoken</dt><dd>{auth.clientId}</dd></div>}{auth.clientTenancy && <div><dt>Klienttype</dt><dd>Én testvirksomhet ({auth.clientTenancy})</dd></div>}<div><dt>Mottaker-API</dt><dd>{environment.endpoint}</dd></div>{auth.expiresAt && <div><dt>Token utløper</dt><dd>{new Date(auth.expiresAt).toLocaleString('nb-NO')}</dd></div>}<div><dt>Lokal lagring</dt><dd><code>secrets/connection.json</code><br />Lagret skjemaoppsett overstyrer TTT-verdiene i <code>.env</code>.</dd></div></dl><p>Appen oppretter automatisk en klient-ID for testtokenet. Hvis NHN krever en bestemt test-ID, sett <code>HELSEID_TTT_CLIENT_ID</code> i <code>.env</code> og start serveren på nytt.</p><p>Fjern filen for å gå tilbake til oppsettet i <code>.env</code>, og start appen på nytt.</p></details>
     </aside>
   </div>;
 }
 
-function RegisteredClientSettings({ auth, busy, connect }) {
+function RegisteredClientSettings({ auth, busy, connect, environment }) {
   return <div className="settings-grid">
     <section className="card settings-card"><h2>HelseID test</h2><div className={`settings-status ${auth.authenticated ? 'success' : ''}`}>{auth.authenticated ? 'Testtoken hentet med DPoP' : auth.configured ? 'Oppsett funnet – klart til å teste' : 'Oppsettet er ikke ferdig'}</div>
       <dl className="settings-list"><div><dt>Metode</dt><dd>client_credentials · private_key_jwt · DPoP</dd></div><div><dt>Issuer</dt><dd>https://helseid-sts.test.nhn.no</dd></div><div><dt>Klient-ID</dt><dd>{auth.clientId || 'Ikke konfigurert'}</dd></div><div><dt>Scope</dt><dd>{auth.scope || 'Ikke konfigurert'}</dd></div>{auth.expiresAt && <div><dt>Token utløper</dt><dd>{new Date(auth.expiresAt).toLocaleString('nb-NO')}</dd></div>}{auth.organization && <div><dt>Hovedenhet i token</dt><dd>{auth.organization}</dd></div>}</dl>
       <button className="button primary" onClick={connect} disabled={!auth.configured || !!busy}>{busy === 'auth' ? 'Henter testtoken …' : 'Test HelseID-tilkobling'}</button><p>Testknappen henter et token. Tilgang til Oppgave API kontrolleres først ved innsending.</p>
     </section>
     <section className="card settings-card"><h2>Konfigurer registrert klient</h2><ol className="setup-steps"><li>Registrer klienten i HelseID test og få godkjent tilgang til <b>Helsenorge Ekstern API → Oppgave</b>.</li><li>Sett <code>HELSEID_AUTH_MODE=client_credentials</code> i <code>.env</code>. Angi klient-ID, eksakt scope og nøkkel-ID.</li><li>Legg privat JWK eller PEM i <code>secrets/</code> og sett <code>HELSEID_PRIVATE_KEY_FILE</code>.</li><li>Start serveren på nytt og test tilkoblingen.</li></ol><p>Privatnøkkel og tilgangstoken behandles bare på serveren.</p>{auth.missing?.length > 0 && <div className="missing-config"><b>Dette mangler:</b>{auth.missing.map(key => <span key={key}>{missingLabels[key] || key}</span>)}</div>}<a href="https://utviklerportal.nhn.no/informasjonstjenester/helseid/" target="_blank" rel="noreferrer">HelseID-dokumentasjon ↗</a></section>
-    <section className="card settings-card full"><h2>Helsenorge test02</h2><div className="endpoint"><span>POST</span><code>{TASK_ENDPOINT}</code></div><p>Klienten sender én FHIR Task i JSON-format. Målmiljøet er fast satt til test02.</p></section>
+    <section className="card settings-card full"><h2>Helsenorge {environment.label}</h2><div className="endpoint"><span>POST</span><code>{environment.endpoint}</code></div><p>Klienten sender én FHIR Task i JSON-format. Velg Test01 eller Test02 ved sendeknappen på oppgavesiden.</p></section>
   </div>;
 }
 
-export default function ConnectionSettings({ auth, busy, connect, saveSettings }) {
+export default function ConnectionSettings({ auth, busy, connect, saveSettings, environment = getTestEnvironment(DEFAULT_ENVIRONMENT) }) {
   const testToken = auth?.mode !== 'client_credentials';
   return <>
-    <div className="page-heading"><div><p className="eyebrow">INTEGRASJON</p><h1>Tilkobling til testmiljø</h1><p>{testToken ? 'Sett opp HelseID for å sende oppgaver til Helsenorge test02.' : 'HelseID autentiserer virksomheten ved maskin-til-maskin-tilgang.'}</p></div></div>
-    {!auth ? <p role="status">Henter tilkoblingsoppsettet …</p> : testToken ? <TestTokenSetup auth={auth} busy={busy} connect={connect} saveSettings={saveSettings} /> : <RegisteredClientSettings auth={auth} busy={busy} connect={connect} />}
+    <div className="page-heading"><div><p className="eyebrow">INTEGRASJON</p><h1>Tilkobling til testmiljø</h1><p>{testToken ? 'Sett opp HelseID for å sende oppgaver til Helsenorge Test01 eller Test02. Velg testområde på oppgavesiden.' : 'HelseID autentiserer virksomheten ved maskin-til-maskin-tilgang.'}</p></div></div>
+    {!auth ? <p role="status">Henter tilkoblingsoppsettet …</p> : testToken ? <TestTokenSetup environment={environment} auth={auth} busy={busy} connect={connect} saveSettings={saveSettings} /> : <RegisteredClientSettings environment={environment} auth={auth} busy={busy} connect={connect} />}
   </>;
 }

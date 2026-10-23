@@ -36,6 +36,7 @@ main {
 }
 
 .brand-symbol, .nav-dot, .nav-count, .status-dot { flex-shrink: 0; }
+.send-card > .field { margin-top: 1rem; }
 .brand-subtitle { line-height: 1.5; }
 .topbar-right { flex-wrap: wrap; gap: 1rem; }
 

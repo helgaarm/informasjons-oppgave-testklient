@@ -160,7 +160,7 @@ test('settings cannot change during authentication or submission and become writ
     const client = { status: () => ({ mode: 'test-token', configured: true }), getToken: wait, sendTask: wait };
     const s = await serve(t, { client, saveSettings: async () => client });
     const task = exampleTask(); task.owner.identifier.value = '12345678901';
-    const pending = s.post(route, { task, confirmTestData: true });
+    const pending = s.post(route, { task, environment: 'test02', confirmTestData: true });
     await entered;
     try { assert.equal((await s.post('/api/auth/settings', fixture())).status, 409); }
     finally { release(); }

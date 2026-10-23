@@ -15,7 +15,7 @@ issues, pull requests, logger eller skjermbilder.
 
 ## Tiltenkt bruk og grenser
 
-- Applikasjonen er for én lokal operatør, syntetiske testdata og Helsenorge test02.
+- Applikasjonen er for én lokal operatør, syntetiske testdata og Helsenorge Test01/Test02.
 - Serveren binder til loopback. Bruk en SSH-tunnel ved kjøring på en ekstern maskin.
 - HelseID autentiserer API-klienten; applikasjonen har ikke operatørinnlogging.
   Den skal ikke eksponeres som en offentlig eller delt webtjeneste.
@@ -27,9 +27,13 @@ issues, pull requests, logger eller skjermbilder.
   brukerkontoen og den lokale prosjektmappen. API-nøkkelen skrives inn i et
   skjult felt, men returneres aldri i API-svar eller lagres i nettleserlagring.
 - Lagring bruker samme vertsnavn-, origin-, sesjons- og CSRF-kontroller som
-  innsending. Nettleseren kan bare endre de fem TTT-feltene, ikke filsti,
+  innsending. Tilkoblingsskjemaet kan bare endre de fem TTT-feltene, ikke filsti,
   endepunkter, miljø eller autentiseringsmetode. Lagring utfører ingen eksterne
   tjenestekall og er sperret under tilkoblingstester og innsendinger.
+- Innsending krever et eksplisitt valg av `test01` eller `test02`. Serveren velger
+  mål fra en fast liste, uten støtte for produksjon eller vilkårlige URL-er.
+  DPoP-bevis bindes til valgt endepunkt; API-noncer og duplikatsperrer er adskilt
+  per testområde. Bytte av område krever ny bekreftelse på testdata i grensesnittet.
 - TLS-verifikasjon skal være aktiv. Ikke bruk produksjonsnøkler i dette prosjektet.
 - Utviklingsserveren begrenser filtilgang til frontend-kode og avhengigheter.
   Lokale oppsett, serverkode og private nøkkelfiler skal aldri kunne lastes ned.

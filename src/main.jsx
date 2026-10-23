@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { newTask, exampleTask, getAt, setAt, validateTask, SYSTEMS, AREAS } from '../shared/task.js';
 import { submissionMessage } from '../shared/submission-feedback.js';
+import { DEFAULT_ENVIRONMENT, TEST_ENVIRONMENTS, getTestEnvironment } from '../shared/environments.js';
 import FieldEditor from './FieldEditor.jsx';
 import ConnectionSettings from './ConnectionSettings.jsx';
 import './styles.css';
@@ -46,7 +47,14 @@ function App() {
   const [confirmed, setConfirmed] = useState(false);
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
+  const [environmentId, setEnvironmentId] = useState(DEFAULT_ENVIRONMENT);
+  const [blockedSubmissions, setBlockedSubmissions] = useState(() => new Set());
   const [dirty, setDirty] = useState(false);
+  const environment = getTestEnvironment(environmentId);
+  const environmentReady = config?.environments?.some(e => e.id === environment.id && e.endpoint === environment.endpoint);
+  const identifier = Array.isArray(task.identifier) ? task.identifier.find(i => i?.system === SYSTEMS.uuid)?.value : undefined;
+  const submissionKey = JSON.stringify([environmentId, identifier]);
+  const deliveryBlocked = blockedSubmissions.has(submissionKey);
   const fileInput = useRef(null);
   const activeTask = useRef(task);
   activeTask.current = task;
@@ -66,6 +74,9 @@ function App() {
     return data;
   }
   function edit(next) { setTask(next); setDirty(true); setServerIssues(null); setResult(null); setConfirmed(false); }
+  function changeEnvironment(id) {
+    setEnvironmentId(id); setConfirmed(false); setNotice(null);
+  }
   const change = (path, value) => {
     const parts = path.split('.').map(x => /^\d+$/.test(x) ? Number(x) : x);
     let next = setAt(task, parts, value);
@@ -103,7 +114,7 @@ function App() {
   }
   function download() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(task, null, 2)], { type: 'application/fhir+json' }));
-    const a = document.createElement('a'); a.href = url; a.download = 'informasjonsoppgave-test02.json'; a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url; a.download = `informasjonsoppgave-${environmentId}.json`; a.click(); URL.revokeObjectURL(url);
     setDirty(false); setNotice({ text: 'FHIR Task er lastet ned som JSON.' });
   }
   async function validate() {
@@ -125,26 +136,38 @@ function App() {
     } finally { setBusy(''); }
   }
   async function send() {
+    if (!environmentReady || !confirmed || busy || deliveryBlocked) return;
     setBusy('send'); setResult(null);
-    try {
-      const response = await api('/api/tasks/send', { task, confirmTestData: confirmed });
+    // Capture the destination and identifier for this request, including uncertain delivery.
+    const sentEnvironment = environmentId, sentKey = submissionKey;
+    const record = response => {
       setResult(response); setPreview('response');
-      setHistory(h => [{ at: response.receivedAt, status: response.status, ok: response.ok, correlationId: response.correlationId }, ...h].slice(0, 20));
+      setHistory(h => [{ at: response.receivedAt || new Date().toISOString(), environment: sentEnvironment,
+        status: response.status, ok: response.ok, deliveryUnknown: response.deliveryUnknown, correlationId: response.correlationId }, ...h].slice(0, 20));
+      if (response.ok || response.deliveryUnknown) setBlockedSubmissions(keys => new Set([...keys, sentKey]));
+    };
+    try {
+      const response = await api('/api/tasks/send', { task, environment: sentEnvironment, confirmTestData: confirmed });
+      record(response);
       setNotice({ error: !response.ok, text: submissionMessage(response) });
-    } catch (e) { setNotice({ error: true, text: e.message }); if (e.issues) { setServerIssues(e.issues); setPreview('validation'); } if (e.code === 'delivery_unknown') { setResult({ ok: false, deliveryUnknown: true, body: e.message }); setPreview('response'); } }
+    } catch (e) {
+      setNotice({ error: true, text: e.message });
+      if (e.issues) { setServerIssues(e.issues); setPreview('validation'); }
+      if (e.code === 'delivery_unknown') record({ ok: false, deliveryUnknown: true, environment: sentEnvironment, body: e.message });
+    }
     finally { setBusy(''); fetch('/api/config').then(r => r.json()).then(setConfig).catch(() => {}); }
   }
   const hasJsonChanges = jsonDraft !== null && jsonDraft !== JSON.stringify(task, null, 2);
   const tabs = ['Oppgave', 'Mottaker og avsender', 'Frister og tilgang', 'Alle FHIR-felt', 'JSON'];
   return <>
     <a className="skip-link" href="#main">Gå til innhold</a>
-    <header className="topbar"><div className="brand"><span className="brand-symbol"><Icon name="task" size={26} /></span><span>Helsenorge<span className="brand-subtitle">Testklient for informasjonsoppgaver</span></span></div><div className="topbar-right"><span className="environment"><i /> TEST02</span><span className="topbar-divider" /><span className="test-label">Kun testdata</span></div></header>
+    <header className="topbar"><div className="brand"><span className="brand-symbol"><Icon name="task" size={26} /></span><span>Helsenorge<span className="brand-subtitle">Testklient for informasjonsoppgaver</span></span></div><div className="topbar-right"><span className="environment"><i /> {environment.label}</span><span className="topbar-divider" /><span className="test-label">Kun testdata</span></div></header>
     <div className="shell">
       <aside className="sidebar"><div className="sidebar-label">ARBEIDSOMRÅDE</div><nav aria-label="Hovedmeny">
         <button className={view === 'task' ? 'nav-item active' : 'nav-item'} onClick={() => setView('task')}><Icon name="task" />Informasjonsoppgave</button>
         <button className={view === 'connection' ? 'nav-item active' : 'nav-item'} onClick={() => setView('connection')}><Icon name="shield" />Tilkobling<span className={`nav-dot ${config?.auth?.authenticated ? 'connected' : ''}`} /></button>
         <button className={view === 'history' ? 'nav-item active' : 'nav-item'} onClick={() => setView('history')}><Icon name="send" />Innsendinger<span className="nav-count">{history.length}</span></button>
-      </nav><div className="sidebar-bottom"><div className="sidebar-card"><span className="small-label">VALGT MILJØ</span><strong>Helsenorge test02</strong><span>HelseID test · DPoP</span><a href="https://tjenester.hn2.test.nhn.no/" target="_blank" rel="noreferrer">Åpne Helsenorge <Icon name="link" size={14} /></a></div><a className="docs-link" href="https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/2619211802" target="_blank" rel="noreferrer">Dokumentasjon <Icon name="link" size={15} /></a><p className="theme-credit">NHN-farger og systemtypografi.<br />Lokal, uavhengig testklient.</p></div></aside>
+      </nav><div className="sidebar-bottom"><div className="sidebar-card"><span className="small-label">VALGT MILJØ</span><strong>Helsenorge {environment.label}</strong><span>HelseID test · DPoP</span><a href={environment.portalUrl} target="_blank" rel="noreferrer">Åpne Helsenorge {environment.label} <Icon name="link" size={14} /></a></div><a className="docs-link" href="https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/2619211802" target="_blank" rel="noreferrer">Dokumentasjon <Icon name="link" size={15} /></a><p className="theme-credit">NHN-farger og systemtypografi.<br />Lokal, uavhengig testklient.</p></div></aside>
       <main id="main">
         <div className="breadcrumb">Helsenorge <span>/</span> {view === 'connection' ? 'Tilkobling' : view === 'history' ? 'Innsendinger' : 'Informasjonsoppgaver'}</div>
         {notice && <div className={`notice ${notice.error ? 'error' : ''}`} role={notice.error ? 'alert' : 'status'}><Icon name={notice.error ? 'info' : 'check'} /><span>{notice.text}</span><button aria-label="Lukk melding" onClick={() => setNotice(null)}>×</button></div>}
@@ -164,7 +187,7 @@ function App() {
                 <div className="info-panel"><Icon name="info" /><p>Helsenorge markerer oppgaven som utført første gang innbygger åpner lenken. Innbygger kan komme tilbake til informasjonen senere.</p></div>
               </>}
               {tab === 1 && <><div className="section-heading"><div><h2>Mottaker og avsender</h2><p>Oppgaven sendes alltid til testpersonen, også ved representasjon.</p></div><span className="step-number">02</span></div>
-                {field('owner.identifier.value', 'Testpersonens fødselsnummer / D-nummer', { required: true, maxLength: 11, placeholder: '11 siffer', hint: 'Bruk en testperson som finnes og er aktiv i test02.' })}
+                {field('owner.identifier.value', 'Testpersonens fødselsnummer / D-nummer', { required: true, maxLength: 11, placeholder: '11 siffer', hint: `Bruk en testperson som finnes og er aktiv i ${environment.label}.` })}
                 {field('owner.display', 'Visningsnavn for testpersonen', { placeholder: 'Valgfritt', hint: 'Kun visningsnavn. Fødselsnummeret identifiserer mottakeren.' })}
                 <div className="section-divider"><h3>Avsender</h3><code>{task.requester?.reference || 'Ingen referanse'}</code></div>
                 {orgIndex >= 0 ? <>
@@ -196,14 +219,22 @@ function App() {
             <section className="card preview-card"><div className="preview-header"><h2>Kontroller oppgaven</h2><span className="pill">UTKAST</span></div><div className="preview-tabs">{[['content', 'Innhold'], ['validation', `Kontroll${errors.length ? ` (${errors.length})` : ''}`], ['response', 'Respons']].map(([v, label]) => <button className={preview === v ? 'selected' : ''} key={v} onClick={() => setPreview(v)}>{label}</button>)}</div>
               {preview === 'content' && <div className="content-preview"><span className="small-label">INFORMASJONSOPPGAVE</span><div className="preview-illustration"><Icon name="task" size={26} /></div><h3>{task.code?.text || 'Oppgavens tittel'}</h3><p className={!task.description ? 'placeholder' : ''}>{task.description || 'Beskrivelsen du skriver, vises her.'}</p><div className="preview-action">Åpne informasjon <Icon name="link" size={16} /></div><dl><div><dt>Fra</dt><dd>{org?.name || 'Ikke angitt'}</dd></div><div><dt>Til</dt><dd>{task.owner?.display || (task.owner?.identifier?.value ? `Testperson · ••••••${String(task.owner.identifier.value).slice(-5)}` : 'Velg testperson')}</dd></div><div><dt>Svarfrist</dt><dd>{task.restriction?.period?.end?.slice(0, 10) || 'Ikke angitt'}</dd></div></dl><p className="preview-disclaimer">Innholdsvisning. Utseendet i Helsenorge kan avvike.</p></div>}
               {preview === 'validation' && <div className="validation-panel"><h3>{errors.length ? `${errors.length} felt må kontrolleres` : 'Ingen lokale feil funnet'}</h3><p className="muted">{serverIssues ? 'FHIR R4-struktur og lokale Helsenorge-regler er kontrollert.' : 'Foreløpig feltkontroll. Velg Valider for full lokal strukturkontroll.'}</p>{issues.map((i, n) => <div className={`issue ${i.severity}`} key={n}><code>{i.path}</code><p>{i.message}</p></div>)}<p className="muted">Helsenorge gjør endelig kontroll av profil, rettigheter og mottaker.</p></div>}
-              {preview === 'response' && <div className="response-panel">{result ? <><span className={`result-badge ${result.ok ? 'success' : ''}`}>{result.deliveryUnknown ? 'Ukjent leveringsstatus' : result.status ? `HTTP ${result.status}` : 'Ingen kvittering'}</span>{result.location && <p className="wrap"><b>Location:</b> {result.location}</p>}{result.correlationId && <p className="wrap"><b>Korrelasjons-ID:</b> {result.correlationId}</p>}<pre>{typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2)}</pre></> : <div className="empty-state"><Icon name="send" size={28} /><h3>Ingen innsending ennå</h3><p>HTTP-status og svaret fra Helsenorge vises her etter innsending.</p></div>}</div>}
+              {preview === 'response' && <div className="response-panel">{result ? <><p><b>Testområde:</b> {getTestEnvironment(result.environment)?.label || 'Ukjent'}</p><span className={`result-badge ${result.ok ? 'success' : ''}`}>{result.deliveryUnknown ? 'Ukjent leveringsstatus' : result.status ? `HTTP ${result.status}` : 'Ingen kvittering'}</span>{result.location && <p className="wrap"><b>Location:</b> {result.location}</p>}{result.correlationId && <p className="wrap"><b>Korrelasjons-ID:</b> {result.correlationId}</p>}<pre>{typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2)}</pre></> : <div className="empty-state"><Icon name="send" size={28} /><h3>Ingen innsending ennå</h3><p>HTTP-status og svaret fra Helsenorge vises her etter innsending.</p></div>}</div>}
             </section>
-            <section className="card send-card"><div className="connection-status"><span className={`status-dot ${config?.auth?.authenticated ? 'ok' : ''}`} /><strong>HelseID test</strong><button className="text-button" onClick={() => setView('connection')}>{config?.auth?.authenticated ? 'Tilkoblet' : config?.auth?.configured ? 'Klar til tilkobling' : 'Sett opp'}</button></div><div className="send-summary"><span>Målmiljø</span><b>Helsenorge test02</b></div><label className="checkbox-label confirmation"><input type="checkbox" checked={confirmed} disabled={!!busy} onChange={e => setConfirmed(e.target.checked)} /><span>Jeg har kontrollert mottaker og innhold. Oppgaven inneholder kun testdata.</span></label><div className="send-buttons"><button className="button secondary" disabled={!!busy || !config || hasJsonChanges} onClick={validate}><Icon name="check" />{busy === 'validate' ? 'Validerer …' : 'Valider'}</button><button className="button primary" onClick={send} disabled={!!busy || !!errors.length || !confirmed || !config?.auth?.configured || hasJsonChanges || result?.ok || result?.deliveryUnknown}><Icon name="send" />{busy === 'send' ? 'Sender …' : 'Send til test02'}</button></div><p className="send-note">{!config?.auth?.configured ? 'Konfigurer HelseID under Tilkobling for å aktivere innsending.' : errors.length ? 'Rett valideringsfeilene før du sender.' : warnings.length ? `${warnings.length} merknad(er) under Kontroll. Kontroller før du sender.` : 'Oppgaven sendes først når du trykker Send til test02.'}</p></section>
+            <section className="card send-card">
+              <div className="connection-status"><span className={`status-dot ${config?.auth?.authenticated ? 'ok' : ''}`} /><strong>HelseID test</strong><button className="text-button" onClick={() => setView('connection')}>{config?.auth?.authenticated ? 'Tilkoblet' : config?.auth?.configured ? 'Klar til tilkobling' : 'Sett opp'}</button></div>
+              <Field path="environment" label="Testområde på Helsenorge" value={environmentId} onChange={changeEnvironment} disabled={!!busy}
+                options={TEST_ENVIRONMENTS.map(e => [e.id, e.label])}
+                hint={`${environment.description} Du må ha tilgang og en aktiv testperson i valgt område.`} />
+              <label className="checkbox-label confirmation"><input type="checkbox" checked={confirmed} disabled={!!busy} onChange={e => setConfirmed(e.target.checked)} /><span>Jeg har kontrollert mottaker og innhold for {environment.label}. Oppgaven inneholder kun testdata.</span></label>
+              <div className="send-buttons"><button className="button secondary" disabled={!!busy || !config || hasJsonChanges} onClick={validate}><Icon name="check" />{busy === 'validate' ? 'Validerer …' : 'Valider'}</button><button className="button primary" onClick={send} disabled={!!busy || !!errors.length || !confirmed || !config?.auth?.configured || !environmentReady || hasJsonChanges || deliveryBlocked}><Icon name="send" />{busy === 'send' ? 'Sender …' : `Send til ${environment.label}`}</button></div>
+              <p className="send-note">{config && !environmentReady ? 'Start appen på nytt og last siden på nytt for å aktivere valg av testområde.' : !config?.auth?.configured ? 'Konfigurer HelseID under Tilkobling for å aktivere innsending.' : deliveryBlocked ? `Oppgaven er allerede sendt eller har ukjent leveringsstatus i ${environment.label}. Kontroller responsen før du oppretter en ny oppgave.` : errors.length ? 'Rett valideringsfeilene før du sender.' : warnings.length ? `${warnings.length} merknad(er) under Kontroll. Kontroller før du sender.` : `Oppgaven sendes først når du trykker Send til ${environment.label}.`}</p>
+            </section>
           </aside></div>
         </>}
-        {view === 'connection' && <ConnectionSettings auth={config?.auth} busy={busy} connect={connect} saveSettings={saveConnection} />}
-        {view === 'history' && <><div className="page-heading"><div><p className="eyebrow">DENNE NETTLESERØKTEN</p><h1>Innsendinger</h1><p>Tekniske kvitteringer fra denne økten. Ingen oppgaveinnhold lagres i historikken.</p></div></div><section className="card settings-card">{history.length ? <div className="table-scroll"><table><thead><tr><th>Tidspunkt</th><th>Status</th><th>Korrelasjons-ID</th></tr></thead><tbody>{history.map((r, i) => <tr key={i}><td>{new Date(r.at).toLocaleString('nb-NO')}</td><td>{r.ok ? 'Mottatt' : 'Avvist / ukjent'} · HTTP {r.status}</td><td><code>{r.correlationId}</code></td></tr>)}</tbody></table></div> : <div className="empty-state"><Icon name="send" size={36} /><h2>Ingen innsendinger i denne økten</h2><p>Opprett en informasjonsoppgave for å komme i gang.</p><button className="button primary" onClick={() => setView('task')}>Gå til oppgaven</button></div>}</section></>}
-        <footer className="page-footer"><span>Informasjonsoppgaver · FHIR R4</span><span>Helsenorge test02 <i /> HelseID test</span></footer>
+        {view === 'connection' && <ConnectionSettings environment={environment} auth={config?.auth} busy={busy} connect={connect} saveSettings={saveConnection} />}
+        {view === 'history' && <><div className="page-heading"><div><p className="eyebrow">DENNE NETTLESERØKTEN</p><h1>Innsendinger</h1><p>Tekniske kvitteringer fra denne økten. Ingen oppgaveinnhold lagres i historikken.</p></div></div><section className="card settings-card">{history.length ? <div className="table-scroll"><table><thead><tr><th>Tidspunkt</th><th>Testområde</th><th>Status</th><th>Korrelasjons-ID</th></tr></thead><tbody>{history.map((r, i) => <tr key={i}><td>{new Date(r.at).toLocaleString('nb-NO')}</td><td>{getTestEnvironment(r.environment)?.label || 'Ukjent'}</td><td>{r.ok ? 'Mottatt' : r.deliveryUnknown ? 'Ukjent levering' : 'Avvist'}{r.status ? ` · HTTP ${r.status}` : ''}</td><td><code>{r.correlationId}</code></td></tr>)}</tbody></table></div> : <div className="empty-state"><Icon name="send" size={36} /><h2>Ingen innsendinger i denne økten</h2><p>Opprett en informasjonsoppgave for å komme i gang.</p><button className="button primary" onClick={() => setView('task')}>Gå til oppgaven</button></div>}</section></>}
+        <footer className="page-footer"><span>Informasjonsoppgaver · FHIR R4</span><span>Helsenorge {environment.label} <i /> HelseID test</span></footer>
       </main>
     </div>
   </>;

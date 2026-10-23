@@ -32,28 +32,85 @@ test('same-origin and CSRF enforcement; validation never sends; auth does not ex
   r = await s.post('/api/auth/connect', {}, { Origin: 'https://untrusted.example' }); assert.equal(r.status, 403);
   r = await s.post('/api/auth/connect', {}); assert.equal(r.status, 200); assert.ok(!(await r.text()).includes('must-not-leak'));
   r = await s.post('/api/tasks/validate', { task: s.task }); assert.equal((await r.json()).valid, true);
-  r = await s.post('/api/tasks/send', { task: s.task }); assert.equal(r.status, 400);
-  r = await s.post('/api/tasks/send', { task: { ...s.task, status: 'completed' }, confirmTestData: true }); assert.equal(r.status, 422);
+  r = await s.post('/api/tasks/send', { task: s.task, environment: 'test02' }); assert.equal(r.status, 400);
+  r = await s.post('/api/tasks/send', { task: { ...s.task, status: 'completed' }, environment: 'test02', confirmTestData: true }); assert.equal(r.status, 422);
   assert.equal(s.calls(), 0);
 });
 test('successful send is not repeated for the same business identifier', async t => {
   let count = 0;
   const s = await setup(t, async task => { count++; return { ok: true, status: 201, body: { id: task.identifier[0].value } }; });
-  const body = { task: s.task, confirmTestData: true };
+  const body = { task: s.task, environment: 'test02', confirmTestData: true };
   const r = await s.post('/api/tasks/send', body); assert.equal(r.status, 200); assert.equal((await r.json()).status, 201);
   assert.equal((await s.post('/api/tasks/send', body)).status, 409); assert.equal(count, 1);
 });
 test('unknown delivery status blocks repeated POSTs', async t => {
   const s = await setup(t, () => { throw new IntegrationError('Unknown', 502, 'delivery_unknown'); });
-  const body = { task: s.task, confirmTestData: true };
+  const body = { task: s.task, environment: 'test02', confirmTestData: true };
   assert.equal((await s.post('/api/tasks/send', body)).status, 502);
   assert.equal((await s.post('/api/tasks/send', body)).status, 409);
 });
 test('upstream rejection is shown and a corrected payload may be sent', async t => {
   const s = await setup(t, async () => ({ ok: false, status: 422, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'error', diagnostics: 'Invalid recipient' }] } }));
-  const body = { task: s.task, confirmTestData: true };
+  const body = { task: s.task, environment: 'test02', confirmTestData: true };
   const r = await s.post('/api/tasks/send', body); assert.equal(r.status, 502); assert.equal((await r.json()).body.resourceType, 'OperationOutcome');
   assert.equal((await s.post('/api/tasks/send', body)).status, 502);
+});
+
+test('only explicit Test01 or Test02 selection is accepted before any client call', async t => {
+  const s = await setup(t);
+  const config = await (await fetch(`${s.url}/api/config`, { headers: { Cookie: s.cookie } })).json();
+  assert.equal(config.environment, 'test02');
+  assert.deepEqual(config.environments.map(e => e.id), ['test01', 'test02']);
+  for (const environment of [undefined, null, '', 'prod', 'Test01', 'https://untrusted.example', ['test01'], { id: 'test01' }, '__proto__', 'constructor']) {
+    const response = await s.post('/api/tasks/send', { task: s.task, environment, confirmTestData: true });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, 'invalid_environment');
+  }
+  assert.equal(s.calls(), 0);
+});
+
+test('each destination has its own duplicate guard and authoritative response environment', async t => {
+  const destinations = [];
+  const s = await setup(t, async (_task, correlation, environment) => {
+    assert.ok(correlation);
+    destinations.push(environment);
+    return { ok: true, status: 201, environment: 'untrusted-value' };
+  });
+  const body = { task: s.task, confirmTestData: true };
+  for (const environment of ['test01', 'test02']) {
+    const response = await s.post('/api/tasks/send', { ...body, environment });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).environment, environment);
+  }
+  // Editing content or switching away and back cannot bypass the identifier guard.
+  s.task.description = 'Edited after sending';
+  for (const environment of ['test01', 'test02']) {
+    const response = await s.post('/api/tasks/send', { ...body, environment });
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, new RegExp(environment, 'i'));
+  }
+  assert.deepEqual(destinations, ['test01', 'test02']);
+});
+
+test('pending and unknown delivery block only their original destination', async t => {
+  let release, started;
+  const gate = new Promise(resolve => { release = resolve; });
+  const entered = new Promise(resolve => { started = resolve; });
+  const s = await setup(t, async (_task, _correlation, environment) => {
+    if (environment === 'test02') return { ok: true, status: 201 };
+    started(); await gate;
+    throw new IntegrationError('Unknown', 502, 'delivery_unknown');
+  });
+  const body = { task: s.task, confirmTestData: true, environment: 'test01' };
+  const pending = s.post('/api/tasks/send', body);
+  await entered;
+  try {
+    assert.equal((await s.post('/api/tasks/send', body)).status, 409);
+    assert.equal((await s.post('/api/tasks/send', { ...body, environment: 'test02' })).status, 200);
+  } finally { release(); }
+  assert.equal((await pending).status, 502);
+  assert.equal((await s.post('/api/tasks/send', body)).status, 409);
+  assert.equal(s.calls(), 2);
 });
 
 test('authentication attempts are rate limited independently of session and forwarding headers', async t => {
