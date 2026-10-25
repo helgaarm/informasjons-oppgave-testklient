@@ -19,7 +19,10 @@ const server = app.listen(port, host);
 server.once('listening', () => console.log(`Testklient: http://localhost:${port} · Helsenorge Test01 / Test02`));
 server.once('error', async error => {
   console.error(error.code === 'EADDRINUSE'
-    ? `Kunne ikke starte: port ${port} er opptatt. Stopp den gamle appserveren og prøv igjen.`
+    ? `Kunne ikke starte: port ${port} er allerede i bruk.\n`
+      + `Hvis testklienten allerede kjører, åpne http://localhost:${port}.\n`
+      + 'For å starte på nytt: stopp den gamle kjøringen med Ctrl+C i terminalen, og kjør startkommandoen igjen.\n'
+      + 'Hvis en annen app bruker porten, velg en annen PORT og tilsvarende APP_ORIGIN i .env.'
     : 'Kunne ikke starte den lokale appserveren. Kontroller vertsnavn og port.');
   await vite?.close();
   process.exit(1);

@@ -42,6 +42,26 @@ kjører på en ekstern utviklingsmaskin, bruk en SSH-tunnel til port 3000. Denne
 versjonen har ikke operatørinnlogging eller støtte for offentlig flerbrukerdrift.
 HelseID autentiserer API-klienten/virksomheten, ikke operatøren i nettleseren.
 
+### Starte på nytt og løse portkonflikt
+
+Kjør én appserver om gangen. Når appen allerede kjører, åpner du
+**http://localhost:3000** uten å kjøre startkommandoen på nytt.
+For å starte på nytt: trykk **Ctrl+C** i terminalen der appen kjører, vent til
+den har stoppet, og kjør `npm run dev` igjen (eller `npm start` for bygget versjon).
+Last deretter nettsiden på nytt.
+
+Meldingen **«port 3000 er allerede i bruk»** betyr at en prosess allerede lytter
+på denne porten. Hvis det er denne appen, bruk eller stopp den eksisterende
+kjøringen som beskrevet over. Hvis en annen app må beholde porten, sett både
+`PORT=3001` og `APP_ORIGIN=http://localhost:3001` i `.env`, start på nytt og åpne
+**http://localhost:3001**. Behold `HOST` som loopback-adresse.
+
+- **Vite: «Re-optimizing dependencies because lockfile has changed»** er normalt
+  etter endringer i avhengighetene. Vite oppdaterer den lokale hurtigbufferen.
+- **npm: «New major version of npm available»** er et valgfritt oppdateringsvarsel.
+  Det hindrer ikke appen i å starte og løser ikke en portkonflikt. Du trenger ikke
+  oppgradere npm for å løse denne oppstartsfeilen.
+
 ## HelseID test med Test-token-tjenesten (TTT)
 
 Standardoppsettet følger [NHNs veiledning for Test-token-tjenesten](https://utviklerportal.nhn.no/informasjonstjenester/helseid/helseid-selvbetjening/test-token-tjenesten/docs/test-token-tjenesten_enmd).
@@ -159,8 +179,10 @@ HelseID test. DPoP nonce-utfordringer håndteres. Eksisterende oppsett med
    ikke som en enkelt oppgave. Eksempelet har ingen forhåndsvalgt testperson.
 2. Fyll inn tittel, beskrivelse, fullstendig informasjonslenke og hensikt.
 3. Angi en testperson som er aktiv i testområdet du skal bruke, og avsender med kontaktinformasjon.
-4. Angi svarfrist, tjenesteområde og relevante sikkerhetskoder. Innsynskode for
-   ungdom/foreldre skal angis for testpersoner mellom 12 og 15 år.
+4. Angi svarfrist, tjenesteområde og relevante sikkerhetskoder.
+   **Innsyn for ungdom og foreldre** er foreløpig deaktivert og kan ikke endres
+   i det veiledede skjemaet. Støtte kommer senere, når det er besluttet at dette
+   skal kunne gjøres. Ikke legg opp tester som er avhengige av denne funksjonen ennå.
 5. Bruk **Alle FHIR-felt** til resten av R4-attributtene: identifikatorer,
    `basedOn`, metadata, gjentatte elementer, `input`, `output`, extensions,
    underressurser og primitive utvidelser. Feltlisten er basert på R4-definisjonene
