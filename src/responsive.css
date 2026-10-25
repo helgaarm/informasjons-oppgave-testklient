@@ -17,7 +17,7 @@ main {
   container: app-content / inline-size;
   min-width: 0;
   max-width: 120rem;
-  padding: clamp(1.25rem, 2.5vw, 2rem) clamp(1rem, 2.5vw, 3rem) 0;
+  padding: clamp(1rem, 2vw, 1.5rem) clamp(1rem, 2.5vw, 3rem) 0;
 }
 
 .topbar {
@@ -71,12 +71,12 @@ h1 {
 /* One-column fallback; add a sidebar only when the main content has room. */
 .workspace-grid, .settings-grid, .connection-grid {
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(1rem, 2vw, 1.75rem);
+  gap: clamp(1rem, 1.5vw, 1.25rem);
 }
 
 .editor-column { container: task-editor / inline-size; }
 .editor-card {
-  padding: clamp(1rem, 2vw, 2rem) clamp(1rem, 2vw, 2rem) 0;
+  padding: clamp(1rem, 1.5vw, 1.5rem) clamp(1rem, 1.5vw, 1.5rem) 0;
   min-height: 0;
 }
 
@@ -95,6 +95,8 @@ h1 {
   font-size: .75rem;
   line-height: 1.45;
 }
+
+.editor-tabs button > span { flex-shrink: 0; white-space: nowrap; }
 
 .field-row {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
@@ -147,7 +149,7 @@ input:not([type=checkbox]), select, textarea {
 }
 
 /* Reserve room for remove buttons on the label, not on every nested object. */
-.tree-property { min-width: 0; padding: .625rem 0; }
+.tree-property { min-width: 0; padding: .5rem 0; }
 .tree-property summary, .tree-label > span {
   padding-right: 2.25rem;
   flex-wrap: wrap;
@@ -164,7 +166,7 @@ input:not([type=checkbox]), select, textarea {
 .tree-add select, .tree-add input { min-width: 0; flex: 1 1 12rem; }
 .remove-property { min-width: 2rem; min-height: 2rem; top: .25rem; }
 
-.settings-card, .connection-setup { padding: clamp(1rem, 2vw, 2rem); }
+.settings-card, .connection-setup { padding: clamp(1rem, 1.5vw, 1.5rem); }
 .settings-list > div { grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); }
 .setup-steps code, .missing-config, .endpoint code { overflow-wrap: anywhere; }
 .endpoint { flex-wrap: wrap; }
@@ -187,7 +189,7 @@ input:not([type=checkbox]), select, textarea {
 
 @container app-content (min-width: 60rem) {
   .workspace-grid { grid-template-columns: minmax(0, 1fr) minmax(18rem, 23rem); }
-  .preview-column { display: flex; }
+  .preview-column { display: flex; align-items: stretch; }
   .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .connection-grid { grid-template-columns: minmax(0, 1.65fr) minmax(18rem, 1fr); }
   .connection-sidebar { display: flex; }
@@ -212,7 +214,7 @@ input:not([type=checkbox]), select, textarea {
   .nav-item.active { box-shadow: inset 0 -3px var(--green); }
   .nav-dot, .nav-count { margin-left: 0; }
   .topbar-divider, .test-label { display: none; }
-  .breadcrumb { margin-bottom: 1.5rem; }
+  .breadcrumb { margin-bottom: 1rem; }
 }
 
 @media (max-width: 40rem) {
@@ -240,7 +242,7 @@ input:not([type=checkbox]), select, textarea {
   .connection-step-heading { gap: .625rem; }
   .connection-external { width: 100%; }
   .connection-sidebar .settings-card { padding: 1.25rem; }
-  .connection-steps > li { padding-bottom: 1.375rem; margin-bottom: 1.375rem; }
+  .connection-steps > li { padding-bottom: 1rem; margin-bottom: 1.125rem; }
   .page-footer { font-size: .6875rem; gap: .75rem; margin-top: 1.75rem; }
 }
 
