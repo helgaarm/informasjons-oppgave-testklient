@@ -7,7 +7,7 @@ import sys
 
 REPOSITORY = 'helgaarm/informasjons-oppgave-testklient'
 BASE = f'repos/{REPOSITORY}'
-CONTEXTS = ['Tests (Node 22)', 'Tests (Node 24)', 'Secret scan', 'Dependency audit', 'CodeQL']
+CONTEXTS = ['Tests (Node 22)', 'Tests (Node 24)', '.NET companion', 'Secret scan', 'Dependency audit', 'CodeQL']
 ACTIONS_APP_ID = 15368
 PROTECTION = {
     'required_status_checks': {'strict': True, 'checks': [
@@ -44,7 +44,7 @@ SETTINGS = [
     }),
     ('Begrens Actions-leverandører', 'PUT', f'{BASE}/actions/permissions/selected-actions', {
         'github_owned_allowed': False, 'verified_allowed': False,
-        'patterns_allowed': ['actions/checkout@*', 'actions/setup-node@*',
+        'patterns_allowed': ['actions/checkout@*', 'actions/setup-node@*', 'actions/setup-dotnet@*',
                              'actions/dependency-review-action@*', 'github/codeql-action/*@*'],
     }),
     ('Minimale Actions-rettigheter', 'PUT', f'{BASE}/actions/permissions/workflow', {

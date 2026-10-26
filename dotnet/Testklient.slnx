@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/Testklient.Api/Testklient.Api.csproj" />
+  <Project Path="tests/Testklient.Tests/Testklient.Tests.csproj" />
+  <Project Path="tests/Testklient.BrowserHost/Testklient.BrowserHost.csproj" />
+</Solution>

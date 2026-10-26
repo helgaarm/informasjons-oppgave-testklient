@@ -3,6 +3,12 @@
 Sikkerhetsrettelser leveres på nyeste versjon av `main`. Eldre commits og lokale
 kopier må oppdateres av den som bruker dem.
 
+Policyen gjelder både Node-versjonen i repoets rot og .NET-versjonen i `dotnet/`.
+.NET-versjonen har separat `.env`, `secrets/connection.json` og øktcookie.
+Den serverer bare bygget frontend fra `dist`/`wwwroot`; Vite kjører ikke som
+HTTP-server. Testverten med simulerte svar er et eget prosjekt som ikke følger
+med ved publisering av API-prosjektet.
+
 ## Rapporter en sårbarhet
 
 Bruk [privat sårbarhetsrapportering på GitHub](https://github.com/helgaarm/informasjons-oppgave-testklient/security/advisories/new).
@@ -49,12 +55,15 @@ commit fjerner ikke hemmeligheten fra Git-historikk, kloner eller forks.
 
 ## Kontroller i repoet
 
-CI kjører tester og bygg på Node.js 22 og 24, og Gitleaks skanner Git-historikken
+CI kjører tester og bygg på Node.js 22 og 24, og egne .NET 10-, Vitest- og
+nettlesertester for den parallelle implementasjonen. Gitleaks skanner Git-historikken
 med maskert rapportering og en ekstra regel for NHNs UUID-formede TTT-nøkler.
 Avhengigheter kontrolleres ved endringer og ukentlig, og dependency review
-kontrollerer nye avhengigheter i PR-er. CodeQL analyserer JavaScript, Python
-og GitHub Actions når repoet er offentlig.
-Dependabot foreslår oppdateringer for npm og GitHub Actions.
+kontrollerer nye avhengigheter i PR-er. CodeQL analyserer JavaScript/TypeScript,
+C#, Python og GitHub Actions når repoet er offentlig. NuGet-restore bruker
+låste avhengigheter og feiler ved kjente sårbarheter i direkte eller transitive
+pakker. Dependabot foreslår oppdateringer for begge npm-prosjektene, NuGet og
+GitHub Actions.
 
 Arbeidsflytene bruker fastlåste commit-SHA-er og minst mulige tokenrettigheter.
 De bruker verken HelseID-hemmeligheter eller `pull_request_target`. Installasjon

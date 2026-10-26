@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>Testklient</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Hl7.Fhir.R4" Version="6.8.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../frontend/dist/**/*" Link="wwwroot/%(RecursiveDir)%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
