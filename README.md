@@ -17,6 +17,11 @@ Dependabot, CodeQL og aktivering av repoets sikkerhetsinnstillinger.
 
 ## Start prosjektet
 
+Ønsker du Microsoft-stakken, finnes en [parallell .NET 10-versjon](dotnet/README.md)
+med ASP.NET Core, Firely C# FHIR SDK, React 19, TypeScript, Redux Toolkit, Sass,
+Vite 8 og Vitest. Den har eget oppsett og kjører normalt på port 3001 ved siden
+av denne appen. Kommandoene nedenfor gjelder den opprinnelige Node-versjonen.
+
 Krever Node.js **22.19.0 eller nyere** og npm. Bruk en oppdatert LTS-versjon.
 
 ```bash

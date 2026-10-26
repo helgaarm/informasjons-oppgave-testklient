@@ -21,3 +21,9 @@ __pycache__/
 *.pyc
 coverage/
 test-results/
+.tools/
+bin/
+obj/
+.vs/
+*.user
+artifacts/
