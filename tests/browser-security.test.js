@@ -17,7 +17,7 @@ function rawRequest(url, headers) {
     }).on('error', reject);
   });
 }
-async function fixture(t, dev) {
+async function fixture(t, dev, withDependency = false) {
   const prefix = path.join(tmpdir(), 'nhn-browser-security-');
   const root = await mkdtemp(prefix);
   let app, vite;
@@ -30,10 +30,17 @@ async function fixture(t, dev) {
     await rm(root, { recursive: true, force: true });
   });
   for (const [file, value] of Object.entries({
+    'package.json': JSON.stringify({ name: 'browser-security-fixture', private: true, type: 'module' }),
     'index.html': '<div id="root">browser-fixture</div><script type="module" src="/src/main.js"></script>',
-    'src/main.js': 'import { value } from "/shared/module.js"; console.log(value);',
+    'src/main.js': 'import { value } from "/shared/module.js"; console.log(value);' +
+      (withDependency ? 'import { dependency } from "browser-dependency"; console.log(dependency);' : ''),
     'shared/module.js': 'export const value = "shared-fixture";',
-    'node_modules/.vite/deps/browser-dependency.js': 'export const value = "dependency-fixture";',
+    // Let Vite discover and optimize a real dependency. Its cache directory and
+    // metadata are optimizer-owned and may be removed or replaced at startup.
+    'node_modules/browser-dependency/package.json': JSON.stringify({
+      name: 'browser-dependency', version: '1.0.0', type: 'module', exports: './index.js',
+    }),
+    'node_modules/browser-dependency/index.js': 'export const dependency = "dependency-fixture";',
     'dist/index.html': '<div>built-fixture</div>',
     'dist/assets/main.js': 'console.log("built-script");',
     '.env': marker,
@@ -55,16 +62,33 @@ async function fixture(t, dev) {
   return { root, url };
 }
 
-test('development serves browser modules but never private files, raw imports or filesystem URLs', async t => {
-  const { root, url } = await fixture(t, true);
+test('development serves browser modules but never private files, raw imports or filesystem URLs', { timeout: 15000 }, async t => {
+  const { root, url } = await fixture(t, true, true);
+  let entry;
   for (const [route, expected] of [['/', 'browser-fixture'], ['/src/main.js', '/shared/module.js'],
-    ['/shared/module.js', 'shared-fixture'], ['/node_modules/.vite/deps/browser-dependency.js', 'dependency-fixture'],
+    ['/shared/module.js', 'shared-fixture'],
     ['/@vite/client', 'injectQuery']]) {
     const response = await fetch(url + route);
     assert.equal(response.status, 200, route);
-    assert.ok((await response.text()).includes(expected), route);
+    const body = await response.text();
+    assert.ok(body.includes(expected), route);
+    if (route === '/src/main.js') entry = body;
     assert.equal(response.headers.get('access-control-allow-origin'), null);
   }
+  // Follow the browser-facing URL emitted by Vite, including its cache version,
+  // rather than guessing a filename or fabricating optimizer metadata.
+  const dependencyPath = entry.match(/from\s*["']([^"']*\/node_modules\/\.vite\/deps\/browser-dependency\.js\?[^"']+)["']/)?.[1];
+  assert.ok(dependencyPath, 'Vite must rewrite the bare import to an optimized dependency');
+  const dependencyUrl = new URL(dependencyPath, url);
+  assert.equal(dependencyUrl.origin, url);
+  assert.ok(dependencyUrl.searchParams.get('v'), 'optimized dependency must have a cache version');
+  const dependency = await fetch(dependencyUrl);
+  assert.equal(dependency.status, 200, dependencyPath);
+  assert.match(dependency.headers.get('content-type'), /javascript/);
+  const dependencyBody = await dependency.text();
+  assert.ok(dependencyBody.includes('dependency-fixture'));
+  assert.ok(!dependencyBody.includes(marker));
+  assert.equal(dependency.headers.get('access-control-allow-origin'), null);
   const privatePaths = ['.env', '.env.local', '.git/config', 'secrets/connection.json',
     'server/internal.js', 'src/private.pem', 'public/accidental-key.txt'];
   for (const file of privatePaths) {
