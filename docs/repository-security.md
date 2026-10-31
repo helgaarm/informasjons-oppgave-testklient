@@ -16,7 +16,7 @@ og endrer aldri synlighet. Det setter:
 - Ingen force-push eller sletting av `main`. Squash-merge og lineær historikk for
   nye endringer; eksisterende historikk beholdes.
 - Lesetilgang som standard for Actions-token; arbeidsflyter kan ikke godkjenne PR-er.
-- Kun checkout, setup-node, dependency-review og CodeQL fra deres offisielle
+- Kun checkout, setup-node, setup-dotnet, dependency-review og CodeQL fra deres offisielle
   Actions-repoer. Alle Actions må være låst til full commit-SHA.
 - Vedlikeholder må godkjenne arbeidsflyter fra alle eksterne bidragsytere.
 - Dependabot-varsler og sikkerhetsrettelser, secret scanning, push protection og
@@ -26,9 +26,14 @@ Repoet har én kjent vedlikeholder. PR-er kreves, men antall eksterne godkjennin
 er satt til 0 for å unngå at eieren må godkjenne egne PR-er. Når en ekstra
 vedlikeholder er på plass, sett antallet til minst 1 og vurder krav om CODEOWNER-review.
 CODEOWNERS ber vedlikeholderen om review. Scriptet oppretter bare grenbeskyttelse
-når alle fem obligatoriske kontroller allerede har bestått på siste `main`.
-CodeQL analyserer JavaScript, Python og GitHub Actions. Dependency review
-kontrollerer nye avhengigheter i PR-er; npm audit kontrollerer hele lockfilen.
+når alle seks obligatoriske kontroller allerede har bestått på siste `main`:
+`Tests (Node 22)`, `Tests (Node 24)`, `.NET companion`, `Secret scan`,
+`Dependency audit` og `CodeQL`.
+CodeQL analyserer JavaScript/TypeScript, C#, Python og GitHub Actions. Dependency
+review kontrollerer nye avhengigheter i PR-er; npm audit kontrollerer begge
+npm-lockfilene. NuGet-restore med `--locked-mode` feiler ved kjente sårbarheter i
+direkte og transitive avhengigheter. Den separate .NET-jobben kjører bygg,
+MSTest, Vitest og Playwright mot C#-serveren med syntetiske data.
 
 ## Aktiver innstillingene
 

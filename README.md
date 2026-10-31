@@ -4,6 +4,11 @@ Lokal webklient for å opprette og sende **FHIR R4 Task / Communication** til en
 testinnbygger i **Helsenorge Test01 eller Test02**. React-grensesnittet bruker NHNs offisielle
 grønnfarger og Arial, profilens systemfont. Dette er en uavhengig testklient.
 
+Vil du bruke koden som eksempel i eget system? Se
+[implementasjonsguiden for informasjonsoppgaver](docs/implementasjonsguide-informasjonsoppgaver.md)
+med Mermaid-diagrammer, FHIR-mapping, C#-/Node.js-eksempler, HelseID,
+leveringskontroll og lenker til Helsenorges spesifikasjoner.
+
 ## Lisens
 
 Prosjektet er lisensiert under [MIT-lisensen](LICENSE).
@@ -16,6 +21,11 @@ og trygg testbruk. [GitHub-oppsettet](docs/repository-security.md) beskriver CI,
 Dependabot, CodeQL og aktivering av repoets sikkerhetsinnstillinger.
 
 ## Start prosjektet
+
+Ønsker du Microsoft-stakken, finnes en [parallell .NET 10-versjon](dotnet/README.md)
+med ASP.NET Core, Firely C# FHIR SDK, React 19, TypeScript, Redux Toolkit, Sass,
+Vite 8 og Vitest. Den har eget oppsett og kjører normalt på port 3001 ved siden
+av denne appen. Kommandoene nedenfor gjelder den opprinnelige Node-versjonen.
 
 Krever Node.js **22.19.0 eller nyere** og npm. Bruk en oppdatert LTS-versjon.
 

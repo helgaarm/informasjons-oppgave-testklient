@@ -49,6 +49,38 @@ jobs:
         if: matrix.node == 24
         run: python3 -m unittest discover -s tests -p 'test_*.py'
 
+  dotnet:
+    name: .NET companion
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - run: npm ci --ignore-scripts
+        working-directory: dotnet/frontend
+      - run: npm run build && npm test
+        working-directory: dotnet/frontend
+      - run: dotnet restore Testklient.slnx --locked-mode
+        working-directory: dotnet
+      - run: dotnet build Testklient.slnx --no-restore
+        working-directory: dotnet
+      - run: dotnet test Testklient.slnx --no-build --no-restore
+        working-directory: dotnet
+      - run: npx playwright install --with-deps chromium
+        working-directory: dotnet/frontend
+      - run: npm run test:ui
+        working-directory: dotnet/frontend
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
