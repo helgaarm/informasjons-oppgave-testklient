@@ -1,8 +1,7 @@
 # informasjons-oppgave-testklient
 
 Lokal webklient for å opprette og sende **FHIR R4 Task / Communication** til en
-testinnbygger i **Helsenorge Test01 eller Test02**. React-grensesnittet bruker NHNs offisielle
-grønnfarger og Arial, profilens systemfont. Dette er en uavhengig testklient.
+testinnbygger i **Helsenorge Test01 eller Test02**. Dette er en uavhengig testklient.
 
 Vil du bruke koden som eksempel i eget system? Se
 [implementasjonsguiden for informasjonsoppgaver](docs/implementasjonsguide-informasjonsoppgaver.md)
