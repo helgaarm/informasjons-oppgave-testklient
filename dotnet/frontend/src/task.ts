@@ -8,3 +8,5 @@ export const exampleTask = (): TaskResource => ({ ...original.exampleTask(), res
 export const getAt = (value: JsonValue, path: (string | number)[]): JsonValue | undefined => original.getAt(value, path);
 export const setAt = (value: TaskResource, path: (string | number)[], next: JsonValue | undefined): TaskResource => original.setAt(value, path, next);
 export const validateTask = (task: TaskResource): ValidationIssue[] => original.validateTask(task);
+export const normalizeUuid = (value: unknown): string | undefined => original.normalizeUuid(value);
+export const businessIdentifier = (task: TaskResource): string | undefined => original.businessIdentifier(task);

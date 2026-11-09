@@ -68,6 +68,10 @@ kjøringen som beskrevet over. Hvis en annen app må beholde porten, sett både
 
 - **Vite: «Re-optimizing dependencies because lockfile has changed»** er normalt
   etter endringer i avhengighetene. Vite oppdaterer den lokale hurtigbufferen.
+- **Vite: `spawn EPERM` på Windows** kan bety at kjøremiljøet blokkerer nødvendige
+  hjelpeprosesser. Kjør fra en lokal terminal som tillater disse prosessene,
+  eller få kjøretillatelsen avklart med administrator. Kontroller at selve
+  grensesnittet lastes; HTTP 200 på `/` alene bekrefter bare at HTML-siden svarer.
 - **npm: «New major version of npm available»** er et valgfritt oppdateringsvarsel.
   Det hindrer ikke appen i å starte og løser ikke en portkonflikt. Du trenger ikke
   oppgradere npm for å løse denne oppstartsfeilen.
@@ -95,6 +99,10 @@ API-nøkkelen returneres aldri til nettleseren og lagres ikke i localStorage.
 La nøkkelfeltet stå tomt ved senere endringer for å beholde eksisterende nøkkel.
 Ny lagring nullstiller tidligere testtoken, slik at det nye oppsettet må testes.
 Lagring er sperret mens en tilkoblingstest eller innsending pågår.
+Ulagrede tilkoblingsfelt beholdes i minnet når du bytter hovedvisning. De blir
+først lagret på serveren når du velger **Lagre oppsett**. Ved lukking eller
+omlasting varsler nettleseren om ulagrede endringer; nøkkelfeltet tømmes etter
+vellykket lagring. Utkastet lagres ikke i localStorage eller sessionStorage.
 
 Du kan fortsatt konfigurere variablene nedenfor i `.env` og starte appen på nytt.
 I TTT-modus overstyrer lagret skjemaoppsett disse verdiene. Fjern
@@ -116,7 +124,7 @@ serveren startes på nytt én gang for å aktivere lagring fra skjemaet.
 Testknappen kontrollerer tokenuthenting og DPoP-binding. Den beviser **ikke** at
 Helsenorge godtar tokenet, virksomheten eller oppgaven. TTT kan lage token med
 valgte claims, men gir ikke i seg selv virksomheten tilgang til Helsenorge.
-Innsending og aksept av en fullstendig oppgave i test02 er ikke verifisert.
+Vellykket opprettelse av en fullstendig oppgave i Test02 er ikke verifisert.
 
 Serveren kaller `POST https://helseid-ttt.test.nhn.no/v2/create-test-token-with-key`
 med API-nøkkelen i `X-Auth-Key`. Forespørselen angir audience, scope,
@@ -252,6 +260,39 @@ endepunkter; klienten kan ikke angi en URL eller produksjon. DPoP-bevis signeres
 for valgt endepunkt, og API-noncer holdes adskilt per område. Etter oppdatering
 må serveren startes på nytt og nettlesersiden lastes på nytt.
 
+### Kall til det lokale API-et
+
+Ved bruk av skript eller HTTP-verktøy må sesjon og CSRF håndteres, slik
+nettleserklienten gjør automatisk:
+
+1. Kall `GET /api/config` på appens lokale origin og behold sesjonscookien fra
+   `Set-Cookie`. Svaret inneholder `csrf`; ikke logg denne verdien.
+2. Send cookien og `X-CSRF-Token: <csrf fra samme sesjon>` ved alle lokale POST-kall,
+   med `Content-Type: application/json`. En `Origin`-header må samsvare med
+   appens lokale origin. Node bruker normalt port 3000, .NET port 3001.
+3. Valider med `POST /api/tasks/validate` og body `{ task }`. Innsending bruker
+   `/api/tasks/send` og body `{ task, environment, confirmTestData: true }`;
+   dette kallet sender faktisk oppgaven til valgt testmiljø.
+
+Eksempel i PowerShell som **bare validerer** en lokal `oppgave.json`:
+
+```powershell
+$origin = 'http://localhost:3000' # Bruk 3001 for .NET-versjonen.
+$config = Invoke-RestMethod -Uri "$origin/api/config" -SessionVariable session
+$task = Get-Content -LiteralPath './oppgave.json' -Raw | ConvertFrom-Json
+$body = @{ task = $task } | ConvertTo-Json -Depth 100
+Invoke-RestMethod -Uri "$origin/api/tasks/validate" -Method Post `
+  -WebSession $session -ContentType 'application/json' `
+  -Headers @{ Origin = $origin; 'X-CSRF-Token' = $config.csrf } -Body $body
+```
+
+Sesjonen utløper etter 30 minutter og forsvinner ved serveromstart. Manglende
+sesjon eller feil CSRF-token gir HTTP 403. En ny sesjon har ikke den gamles
+duplikatsperrer: avklar tidligere uavklarte innsendinger før nye forsøk.
+Lokale cookies og CSRF-token skal aldri sendes til Helsenorge. Dette er appens
+lokale API-kontrakt; [implementasjonsguiden](docs/implementasjonsguide-informasjonsoppgaver.md)
+viser Helsenorges eksterne API og autentisering.
+
 ## Validering og leveringsstatus
 
 Klienten kontrollerer FHIR R4-struktur og lokale regler fra Helsenorges
@@ -273,9 +314,26 @@ området som vises i responsen før du oppretter en ny oppgave.
 Vellykket innsending og ukjent status sperrer samme forretningsidentifikator i
 samme testområde i serverøkten. Samme identifikator kan testes i det andre området;
 bytte tilbake eller redigering av innhold opphever ikke sperren. Dette er en
-lokal beskyttelse, ikke varig idempotens. Økten utløper etter 30 minutter og
+lokal beskyttelse, ikke varig idempotens. UUID sammenlignes uten hensyn til
+store/små bokstaver eller `urn:uuid:`-prefiks. Verdien i FHIR-payload endres ikke.
+Klienten finner den gyldige UUID-en uavhengig av identifikatorenes rekkefølge;
+flere ulike UUID-er under samme system avvises som tvetydige før innsending.
+Økten utløper etter 30 minutter og
 forsvinner ved serveromstart. HTTP 201/2xx betyr at API-et tok imot forespørselen,
 ikke at innbygger har lest informasjonen.
+
+### Feil 2118: ikke digitalt aktiv for tjenesteområdet
+
+`2118` (dokumentert som `002118`) er et forretningsavslag fra Helsenorge. Ved
+`OmradeHelsehjelp` gjelder vurderingen område 3, Helsehjelp. Kontroller samme
+testperson i samme testmiljø, samtykkenivå og kontaktinformasjonens ferskhet i
+Kontakt- og reservasjonsregisteret (KRR). Innlogging i portalen alene bekrefter
+ikke at personen er aktiv for alle tjenesteområder. Bekreftelse/oppdatering av
+kontaktinformasjon siste 18 måneder inngår i vurderingen.
+
+Se [feilsøking i implementasjonsguiden](docs/implementasjonsguide-informasjonsoppgaver.md#feil-2118-og-testpersonens-aktivitet)
+for kilder, innbyggerinnstillinger og oppfølging. Behold korrelasjons-ID ved
+feilsøking; ikke bytt tjenesteområde eller oppgave-ID bare for å omgå avslaget.
 
 ## Tester
 
@@ -290,6 +348,8 @@ Nettlesertestene kjører mot en egen lokal mock-server med syntetiske oppgaver,
 uten å lese `.env` eller det lagrede tilkoblingsoppsettet. De dekker tapt og
 uleselig svar etter innsending, avvisninger som kan rettes, og låsing av
 JSON-editoren under behandling. Eksterne nettleserforespørsler blokkeres.
+De dekker også at like UUID-er med ulik skrivemåte fortsatt sperres, at
+ulagrede tilkoblingsfelt overlever navigasjon og at nøkkelfeltet tømmes etter lagring.
 På Linux/CI kan nødvendige nettleserpakker installeres med
 `npx playwright install --with-deps chromium`. For å bruke installert Edge i
 PowerShell: `$env:PLAYWRIGHT_CHANNEL='msedge'; npm run test:ui`.
@@ -305,7 +365,9 @@ ingen oppgaver til Helsenorge. Reell HelseID-autentisering og innsending krever
 TTT-API-nøkkel eller registrert klient, samt riktige API-claims og tilgang i valgt testområde.
 Tokenuthenting med TTT og kontroll av tokenets klientopplysninger, tidsangivelser og DPoP-binding ble manuelt verifisert
 mot HelseID test 2026-10-23, både direkte og gjennom appens tilkoblingstest
-(HTTP 200). Innsending og aksept i Helsenorge test02 er fortsatt ikke verifisert.
+(HTTP 200). En fullstendig, lokalt validert informasjonsoppgave ble sendt til
+Test02 2026-11-02 og avvist med HTTP 400 / feil 2118 for digital aktivitet.
+Vellykket opprettelse og hele innbyggerreisen er fortsatt ikke verifisert.
 
 En diagnostisk sammenligning mot Helsenorge test02 samme dato brukte bare den
 ugyldige JSON-strengen `{`, uten Task, mottaker eller melding. Token uten
@@ -344,5 +406,5 @@ zoom, inkludert lange feltverdier, liggende mobil og dypt nestede FHIR-felt.
 - [HelseID DPoP](https://utviklerportal.nhn.no/informasjonstjenester/helseid/bruksmoenstre-og-eksempelkode/bruk-av-helseid/docs/dpop/dpop_no_nbmd)
 - [HelseID organisasjonsnumre](https://utviklerportal.nhn.no/informasjonstjenester/helseid/bruksmoenstre-og-eksempelkode/bruk-av-helseid/docs/tekniske-mekanismer/organisasjonsnumre_no_nbmd)
 
-Dokumentasjonen ble kontrollert 22. oktober 2026. Bekreft gjeldende tilgang og
+Dokumentasjonen ble kontrollert 2. november 2026. Bekreft gjeldende tilgang og
 scope i HelseID før en reell testinnsending.

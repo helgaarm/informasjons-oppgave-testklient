@@ -85,6 +85,59 @@ public sealed class ApiTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task EquivalentUuidSpellingsRemainBlocked(bool unknown)
+    {
+        await using var app = await AppHarness.Start();
+        const string uuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+        var original = "URN:UUID:" + uuid.ToUpperInvariant();
+        string? sentIdentifier = null;
+        app.State.Send = (task, id, env) => {
+            sentIdentifier = task.At("identifier").Items().First().Text("value");
+            return unknown ? throw new IntegrationException("Unknown", 502, "delivery_unknown")
+                : Task.FromResult(new SubmissionResult(true, 201, null, env, null, id, false, DateTimeOffset.UtcNow));
+        };
+        var body = TestData.Submission();
+        body["task"]!["identifier"]![0]!["value"] = original;
+        var expected = unknown ? HttpStatusCode.BadGateway : HttpStatusCode.OK;
+        Assert.AreEqual(expected, (await app.Post("/api/tasks/send", body)).StatusCode);
+        foreach (var value in new[] { uuid, uuid.ToUpperInvariant(), "urn:uuid:" + uuid, original })
+        {
+            body["task"]!["identifier"]![0]!["value"] = value;
+            Assert.AreEqual(HttpStatusCode.Conflict, (await app.Post("/api/tasks/send", body)).StatusCode, value);
+        }
+        Assert.AreEqual(original, sentIdentifier);
+        Assert.AreEqual(1, app.State.Calls);
+        body["environment"] = "test01";
+        Assert.AreEqual(expected, (await app.Post("/api/tasks/send", body)).StatusCode);
+        Assert.AreEqual(2, app.State.Calls);
+    }
+
+    [TestMethod]
+    public async Task BusinessUuidIgnoresIdentifierOrderAndRejectsConflictingUuids()
+    {
+        await using var app = await AppHarness.Start();
+        var body = TestData.Submission();
+        var task = body["task"]!;
+        var uuid = task["identifier"]![0]!.DeepClone();
+        var other = new JsonObject { ["system"] = TaskRules.UuidSystem, ["value"] = "urn:oid:1.2.3.1" };
+        task["identifier"] = new JsonArray(other.DeepClone(), uuid.DeepClone());
+        Assert.AreEqual(HttpStatusCode.OK, (await app.Post("/api/tasks/send", body)).StatusCode);
+        var equivalent = uuid.DeepClone(); equivalent["value"] = uuid.Text("value")!.ToUpperInvariant();
+        task["identifier"] = new JsonArray(uuid.DeepClone(), other.DeepClone(), equivalent);
+        Assert.AreEqual(HttpStatusCode.Conflict, (await app.Post("/api/tasks/send", body)).StatusCode);
+        var different = uuid.DeepClone(); different["value"] = "urn:uuid:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+        task["identifier"] = new JsonArray(other.DeepClone(), different.DeepClone());
+        Assert.AreEqual(HttpStatusCode.OK, (await app.Post("/api/tasks/send", body)).StatusCode);
+        task["identifier"] = new JsonArray(uuid.DeepClone(), different.DeepClone());
+        Assert.AreEqual(HttpStatusCode.UnprocessableEntity, (await app.Post("/api/tasks/send", body)).StatusCode);
+        task["identifier"] = new JsonArray(other.DeepClone());
+        Assert.AreEqual(HttpStatusCode.UnprocessableEntity, (await app.Post("/api/tasks/send", body)).StatusCode);
+        Assert.AreEqual(2, app.State.Calls);
+    }
+
+    [TestMethod]
     public async Task ConcurrentDuplicateAndSettingsAreBlocked()
     {
         await using var app = await AppHarness.Start();

@@ -116,7 +116,7 @@ namespace Testklient
             if (issues.Any(i => i.Severity == "error")) return Results.Json(new { error = "Oppgaven har valideringsfeil.", issues }, statusCode: 422);
             if (!body.At("confirmTestData").IsTrue()) return Results.Json(new { error = "Bekreft at oppgaven bruker testdata før innsending." }, statusCode: 400);
             using var lease = settings.Begin();
-            var identifier = task.At("identifier").Items().First(i => i.Text("system") == TaskRules.UuidSystem).Text("value");
+            var identifier = TaskRules.BusinessIdentifier(task);
             var key = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[] { environment.Id, identifier }))));
             var session = LocalSecurity.Session(context);
             session.Reserve(key);

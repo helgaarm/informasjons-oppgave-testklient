@@ -57,6 +57,9 @@ og bekrefter ikke tilgang til Oppgave i Helsenorge.
 appen. Begge bruker en separat øktcookie. Oppgaver og nøkler lagres ikke i
 nettleserens localStorage. Redux inneholder utkastet og valgt testområde, og
 Redux DevTools er deaktivert.
+Ulagrede tilkoblingsfelt beholdes i komponentminnet ved bytte av hovedvisning,
+med advarsel ved omlasting/lukking. API-nøkkelfeltet tømmes etter lagring;
+utkastet skrives ikke til localStorage eller sessionStorage.
 
 Du kan kopiere `.env.example` til `.env` i denne mappen hvis du vil konfigurere
 uten skjemaet. Prosessens miljøvariabler overstyrer `.env`; lagret TTT-oppsett
@@ -99,6 +102,13 @@ Vellykket og usikker levering sperrer samme oppgaveidentifikator i samme
 testområde i serverøkten. Nettverksbrudd gjentas ikke automatisk. En dokumentert
 DPoP nonce-utfordring kan gjentas én gang. Sperren er lokal, utløper med økten
 etter 30 minutter og forsvinner ved omstart; den er ikke varig idempotens.
+Store/små bokstaver og valgfritt `urn:uuid:`-prefiks gir samme duplikatnøkkel,
+uten å endre selve FHIR-payloaden.
+
+For skript mot det lokale API-et gjelder samme
+[sesjons- og CSRF-flyt](../README.md#kall-til-det-lokale-api-et) som i Node-versjonen,
+med port 3001 og egen sesjonscookie. Ved feil 2118, se
+[feilsøking av digital aktivitet](../docs/implementasjonsguide-informasjonsoppgaver.md#feil-2118-og-testpersonens-aktivitet).
 
 ## Utvikling og tester
 

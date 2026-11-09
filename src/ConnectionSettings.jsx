@@ -33,6 +33,11 @@ function TestTokenSetup({ auth, busy, connect, saveSettings, environment }) {
   const [focusField, setFocusField] = useState(null);
   const form = useRef(null);
   useEffect(() => {
+    if (changed) return; // Refresh saved settings without overwriting an unsaved draft.
+    setValues(v => ({ ...v, audience: auth.audience || suggestions.audience,
+      scope: auth.scope || suggestions.scope, parent: auth.parent || '', child: auth.child || '' }));
+  }, [changed, auth.audience, auth.scope, auth.parent, auth.child]);
+  useEffect(() => {
     if (!focusField || busy) return;
     const element = form.current?.elements.namedItem(focusField);
     const details = element?.closest('details');
