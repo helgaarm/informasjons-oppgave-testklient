@@ -14,7 +14,7 @@ varig leveringskontroll, med lenker til Helsenorges offisielle dokumentasjon.
 | Server | C#, ASP.NET Core, .NET 10 |
 | FHIR | Firely .NET SDK, `Hl7.Fhir.R4` 6.8 |
 | Grensesnitt | React 19, TypeScript med strict-modus, Redux Toolkit, Sass |
-| Frontendbygg og enhetstester | Vite 8, Vitest 4 |
+| Frontendbygg og enhetstester | Vite 8, TypeScript 7, Vitest 5 |
 | Servertester | MSTest, ASP.NET Core TestHost |
 | Nettlesertester | Playwright mot en isolert C#-testserver |
 

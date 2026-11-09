@@ -76,4 +76,3 @@ for (const dirty of [false, true]) {
     else await expect(page.getByRole('button', { name: 'Lagre oppsett', exact: true })).toBeDisabled();
   });
 }
-

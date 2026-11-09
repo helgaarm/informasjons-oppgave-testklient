@@ -34,4 +34,3 @@ for (const outcome of ['accepted', 'unknown']) {
     expect(app.calls).toHaveLength(1);
   });
 }
-
