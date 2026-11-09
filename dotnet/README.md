@@ -4,6 +4,11 @@ En parallell implementasjon av informasjonsoppgaveklienten for utviklere som
 foretrekker Microsoft-stakken. Den eksisterende Node-applikasjonen i repoets rot
 beholdes og kan kjøres samtidig.
 
+For integrasjon i eget system, se
+[implementasjonsguiden for informasjonsoppgaver](../docs/implementasjonsguide-informasjonsoppgaver.md).
+Den inneholder C#-/Firely-eksempler, Mermaid-diagrammer, HelseID-flyt og råd om
+varig leveringskontroll, med lenker til Helsenorges offisielle dokumentasjon.
+
 | Del | Teknologi |
 | --- | --- |
 | Server | C#, ASP.NET Core, .NET 10 |
