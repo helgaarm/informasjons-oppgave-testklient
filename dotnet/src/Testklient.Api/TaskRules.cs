@@ -13,6 +13,14 @@ public static class TaskRules
     public const string AreaSystem = "urn:oid:2.16.578.1.12.4.1.1.7618";
     public const string DeadlineSystem = "http://helsenorge.no/fhir/StructureDefinition/hn-task-deadline";
     private static bool Uuid(string? value) => Regex.IsMatch(value ?? "", "^(?:urn:uuid:)?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", RegexOptions.IgnoreCase);
+    public static string? NormalizeUuid(string? value) => Uuid(value)
+        ? Regex.Replace(value!, "^urn:uuid:", "", RegexOptions.IgnoreCase).ToLowerInvariant() : null;
+    public static string? BusinessIdentifier(JsonNode? task)
+    {
+        var values = task.At("identifier").Items().Where(i => i.Text("system") == UuidSystem)
+            .Select(i => NormalizeUuid(i.Text("value"))).Where(value => value is not null).Distinct().ToArray();
+        return values.Length == 1 ? values[0] : null;
+    }
 
     public static void AssertSafe(JsonNode? node)
     {
@@ -48,7 +56,7 @@ public static class TaskRules
         if (task.Text("intent") is not ("proposal" or "plan")) Add("intent", "Velg proposal eller plan.");
         if (task.Text("intent") == "plan") Add("intent", "Plan skal bare brukes når oppgaven er direkte knyttet til helsehjelp.", "warning");
         if (task.Text("focus", "type") != "Communication") Add("focus.type", "Informasjonsoppgaver må ha focus.type = Communication.");
-        if (!task.At("identifier").Items().Any(i => i.Text("system") == UuidSystem && Uuid(i.Text("value")))) Add("identifier", "Oppgi en UUID som forretningsidentifikator med system urn:ietf:rfc:3986.");
+        if (BusinessIdentifier(task) is null) Add("identifier", "Oppgi én entydig UUID som forretningsidentifikator med system urn:ietf:rfc:3986. Flere ulike UUID-er støttes ikke i denne klienten.");
         if (task.At("id") is not null)
         {
             if (!Uuid(task.Text("id"))) Add("id", "Helsenorge krever GUID som ressurs-ID.");

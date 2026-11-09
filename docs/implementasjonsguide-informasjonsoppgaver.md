@@ -7,7 +7,7 @@ kan gjenbrukes i en egen backend. Frontend kan bygges med valgfri teknologi.
 
 Veiledningen er uavhengig av NHN. Offisielle krav og tilgangsavklaringer følger
 [Oppgave API](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/2109734913)
-og sidene det lenkes til underveis. Kildene er gjennomgått **26. oktober 2026**.
+og sidene det lenkes til underveis. Kildene er gjennomgått **2. november 2026**.
 Arkitekturforslagene er våre anbefalinger; de er ikke en del av API-kontrakten.
 Eksemplene er kontrollert lokalt med syntetiske data, ikke godkjent ved reell
 innsending til Helsenorge.
@@ -113,7 +113,7 @@ som referanse for hele kontrakten, betingede felt og gjeldende begrensninger.
 | --- | --- |
 | Stabil oppgaveidentifikator | `identifier`: UUID med system `urn:ietf:rfc:3986` |
 | Ny oppgave | `status: ready` |
-| Frivillig påminnelse / direkte helsehjelp | `intent: proposal` / `plan` |
+| Frivillig oppgave / oppgave direkte knyttet til helsehjelp | `intent: proposal` / `plan` |
 | Tittel og forklaring | `code.text` og `description` |
 | Informasjonstype og nettadresse | `focus.type: Communication` og `instantiatesUri` |
 | Innbygger | `owner.type: Patient` og `owner.identifier` |
@@ -125,6 +125,18 @@ UUID-en opprettes én gang for den logiske oppgaven og lagres i eget system.
 Ikke lag en ny UUID for hvert teknisk sendeforsøk. Skill den fra `Task.id`, som
 Helsenorge tildeler ved POST, og fra korrelasjons-ID for det enkelte HTTP-kallet.
 [FHIR REST-operasjoner](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1254654012).
+
+Normaliser UUID-en når eget system sammenligner identitet eller beregner en
+duplikatnøkkel: små bokstaver og én avtalt form uten `urn:uuid:`-prefiks er et
+mulig valg. Store/små bokstaver og UUID som tekst eller URN skal ikke opprette
+nye logiske oppgaver. Repoets duplikatkontroll bruker denne normaliseringen i
+både frontend og backend, uten å endre identifikatoren i den innsendte ressursen.
+[UUID-formatet, RFC 9562 §4](https://www.rfc-editor.org/rfc/rfc9562.html#section-4).
+
+Testklienten krever én entydig UUID-verdi under dette systemet. Andre
+identifikatorer påvirker ikke duplikatnøkkelen eller rekkefølgen på oppslag.
+Flere ulike UUID-er avvises lokalt; dette er en begrensning i testklienten,
+ikke et generelt krav om at FHIR `Task.identifier` bare kan ha ett element.
 
 Denne JSON-malen er til lesing og tilpasning. `DIN_TESTPERSON` og
 `VALGT_TJENESTEOMRADE` må erstattes med egne avklarte testverdier før validering.
@@ -266,20 +278,22 @@ Ved overføring til eget system tilpasses stiene og avhengighetene. `newTask`
 fyller inn grunnstrukturen; domenet bestemmer verdiene som overskrives.
 
 ```javascript
-import { newTask, SYSTEMS } from '../../shared/task.js';
+import { newTask, normalizeUuid, SYSTEMS } from '../../shared/task.js';
 import { validateResource } from '../../server/fhir.js';
 
 export function buildInformationTask({
   businessId, recipient, senderName, title, description,
   informationUrl, dueDate, areaCode, sensitiveSender, intent,
 }) {
-  if (!businessId) throw new Error('Oppgi lagret oppgave-ID.');
+  const uuid = normalizeUuid(businessId);
+  if (!uuid || uuid === '00000000-0000-0000-0000-000000000000')
+    throw new Error('Oppgi en gyldig, lagret oppgave-ID.');
   const url = new URL(informationUrl);
   if (url.protocol !== 'https:' || url.username || url.password)
     throw new Error('Bruk en kontrollert HTTPS-adresse uten brukerinformasjon.');
   if (!['proposal', 'plan'].includes(intent)) throw new Error('Velg proposal eller plan.');
 
-  const task = newTask(businessId);
+  const task = newTask(uuid);
   task.intent = intent;
   task.code.text = title;
   task.description = description;
@@ -311,6 +325,13 @@ et token for riktig API og miljø. Et vellykket tokenkall bekrefter ikke at
 Helsenorge godtar klienten eller virksomheten. DPoP er påkrevd i systemkontekst.
 [Helsenorges systemkontekst](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1886191617)
 og [Oppgave API](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/2109734913).
+
+Tokenets `orgnr_parent` skal identifisere helseaktøren kallet gjøres på vegne av.
+For en single-tenant-klient kommer virksomhetskonteksten normalt fra
+klientregistreringen. Multi-tenant-bruk krever riktig virksomhetsvalg og
+godkjent delegering; eventuell underenhet må også håndteres etter HelseIDs regler.
+Et `Organization`-objekt i Task erstatter ikke dette.
+[HelseID: organisasjonsnumre](https://utviklerportal.nhn.no/informasjonstjenester/helseid/bruksmoenstre-og-eksempelkode/bruk-av-helseid/docs/tekniske-mekanismer/organisasjonsnumre_no_nbmd).
 
 Repoet viser to måter å hente token på:
 
@@ -355,7 +376,8 @@ sequenceDiagram
     W->>W: Lagre leveringsutfall varig
 ```
 
-Følgende verdier er konfigurert i **dette repoet**:
+Testendepunktene nedenfor er kontrollert mot Helsenorges miljøoversikt.
+Audience og scope er **repoets forslag** og må bekreftes for din integrasjon:
 
 | Verdi | Konfigurasjon |
 | --- | --- |
@@ -387,6 +409,10 @@ X-Correlation-ID: <unik-id-for-http-kallet>
 Body er selve FHIR-ressursen. Testklientens lokale API tar i tillegg imot blant
 annet valgt miljø og bekreftelse på testdata; denne lokale innpakningen er ikke
 en del av Helsenorges API-kontrakt.
+Hvis du kaller testklientens lokale API fra et skript, kreves dessuten lokal
+sesjonscookie og CSRF-token fra `GET /api/config`. Se
+[fremgangsmåte og valideringseksempel](../README.md#kall-til-det-lokale-api-et).
+Disse lokale sesjonsverdiene skal ikke brukes mot Helsenorge.
 
 ### Koble mapperen til repoets transportkode
 
@@ -461,6 +487,48 @@ Feilkoder og forretningsavslag er beskrevet i
 Ikke alle feilsvar er FHIR; autentiseringsfeil kan også være OAuth-JSON eller
 tekst. Presenter feilmeldinger som tekst og begrens størrelse og logging.
 
+### Feil 2118 og testpersonens aktivitet
+
+`2118` / `002118` betyr at Helsenorge ikke vurderer mottakeren som digitalt
+aktiv for tjenesteområdet i forespørselen. `OmradeHelsehjelp` gjelder område 3.
+Koden fastslår ikke alene hvilken innstilling eller registeropplysning som er
+årsaken. En person kan logge inn og ha tilgang til enkelte tjenester uten å
+være aktiv for helsehjelp.
+
+Kontroller følgende i samme testmiljø som API-kallet:
+
+1. **Miljø og mottaker.** Test01 bruker `tjenester.hn.test.nhn.no`; Test02 bruker
+   `tjenester.hn2.test.nhn.no`. Kontroller at `owner.identifier` er testpersonen
+   som undersøkes, og at profilen ikke gjelder noen personen representerer.
+2. **Samtykke og aktivitet.** Se under *Innstillinger → Ditt samtykke til å bruke
+   Helsenorge*. Full/Full tilgang er relevant for Helsehjelp. Undersøk også om
+   personen er satt inaktiv, eller bare nås via representant.
+3. **Kontaktinformasjon.** Se under *Innstillinger → Kontaktinformasjon*.
+   Oppdatering eller bekreftelse av kontaktinformasjon i Kontakt- og
+   reservasjonsregisteret (KRR) siste 18 måneder inngår i aktivitetsvurderingen.
+   Selve bekreftelsesdatoen er ikke nødvendigvis synlig i Helsenorge.
+   Bruk avtalt KRR-testoppsett for testpersoner, og kontroller at endringen er
+   tilgjengelig før et nytt forsøk; denne guiden angir ingen garantert synktid.
+4. **Videre feilsøking.** Ved behov kan en aktør med godkjent tilgang bruke
+   HelsenorgeAktivSjekken med `omraade: 3` i samme miljø. Tjenesten krever egen
+   tilgang/scope og skiller aktivitet selv fra aktivitet via andre. Den er ikke
+   nødvendig før hvert maskinelle sendeforsøk, siden Helsenorge sjekker ved mottak.
+   Ved motstridende resultater, ta vare på miljø, tidspunkt, tjenesteområde og
+   korrelasjons-ID for oppfølging med NHN.
+
+Ikke endre tjenesteområde, samtykke på andres vegne eller oppgave-ID bare for
+å omgå et avslag. Et rettet testoppsett må fortsatt samsvare med formålet med
+oppgaven. Ikke legg testpersonens identifikator eller legitimasjon i offentlige
+feilrapporter.
+
+Kilder: [HelsenorgeAktiv](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1810268162),
+[HelsenorgeAktivSjekken](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/2043478017),
+[NHN: Hvem når du på Helsenorge?](https://www.nhn.no/tjenester/helsenorge/hvem-nar-du-pa-helsenorge),
+[innbyggerinnstillinger](https://www.helsenorge.no/innstillinger/om/)
+og [feilkoder](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1979777036).
+
+### Varig leveringskontroll
+
 Denne tilstandsmodellen er et forslag for **lokal leveringsstatus**, ikke
 verdier for `Task.status`:
 
@@ -518,6 +586,13 @@ alene. Dette repoet implementerer ikke mottakersidens OIDC-innlogging.
 [Informasjonsoppgave](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/2619211802)
 og [Sømløst uthopp – Helsenorge som OpenID Connect-provider](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1420034058).
 
+Mottakersystemet må starte en ny OIDC-flyt ved hvert sømløse uthopp og avslutte
+en eventuell eksisterende lokal sesjon før ny autentisering. Dette er særlig
+viktig ved bytte mellom egen profil og representasjon: en gammel sesjon må
+ikke føre til at innhold vises for feil person. Følg den offisielle
+[uthoppsflyten](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1420034058),
+inkludert reglene for innbyggeren og den som eventuelt representerer vedkommende.
+
 Som eget sikkerhetstiltak bør domenet velge blant kontrollerte lenkemål. Unngå
 fødselsnummer, token og andre sensitive data i URL-en. Personalisert innhold må
 ha egen autorisasjonskontroll; en vanskelig gjettbar lenke erstatter ikke dette.
@@ -525,7 +600,9 @@ Følg heller ikke en mottatt `Location` med legitimasjon uten å kontrollere at 
 peker til et tillatt API-endepunkt.
 
 Velg `proposal` eller `plan` ut fra den faglige betydningen. Valget påvirker
-blant annet påminnelser. Vurder også om avsendernavnet kan røpe sensitive forhold
+blant annet påminnelser: `plan` skal bare brukes ved direkte helsehjelp og gir
+påminnelser innbygger ikke kan slå av; ved `proposal` kan påminnelser slås av.
+Vurder også om avsendernavnet kan røpe sensitive forhold
 i varsler; da må sensitiv avsender markeres. Ikke velg disse feltene bare for å
 endre hvordan brukerflaten ser ut.
 [Oppgaver til innbygger](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1805680641).
@@ -599,6 +676,7 @@ Forslag til tester i egen integrasjon:
 | Import og endringer | Støttede extensions bevares, ugyldig struktur avvises og endringer ikke flytter oppgaven til en annen person. |
 | Autentisering og miljø | Riktig tokenbinding og endepunkt, avgrenset nonce-håndtering og ingen tokenlekkasje ved feil. |
 | Samtidighet | Samme bestilling blir ikke sendt samtidig av to arbeidere eller brukere. |
+| UUID-format | Store/små bokstaver og valgfritt URN-prefiks omgår ikke sperren etter akseptert eller ukjent levering; miljøene holdes adskilt. |
 | Virksomhetsgrenser | En bestilling kan ikke få en annen virksomhets token ved konfigurasjonsbytte eller parallell kjøring. |
 | Usikker levering | Brudd etter sending og krasj før lagret kvittering utløser oppfølging, ikke automatisk ny POST. |
 | Feilsvar | FHIR-feil, OAuth-feil, tekstsvar og uleselige svar håndteres uten å eksponere hemmeligheter. |
@@ -626,13 +704,15 @@ spesifikasjonen og avklaringer med NHN som styrer integrasjonen.
 | [Testmiljøer og endepunkter](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1552384092) | Valg av miljø og gjeldende adresser. |
 | [FHIR REST-operasjoner](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1254654012) | HTTP-operasjoner og kvitteringer; kontroller hva Oppgave støtter. |
 | [Feilsituasjoner og feilkoder](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1979777036) | Tolkning av forretningsfeil. |
+| [HelsenorgeAktiv](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1810268162) | Tjenesteområder, samtykke, KRR og representasjon i aktivitetsvurderingen. |
+| [HelsenorgeAktivSjekken](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/2043478017) | Separat API for aktivitet selv og via andre, med egen tilgang. |
 | [Representasjon](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/3135111169) | Innsyn og utførelse på vegne av andre. |
 | [Sømløst uthopp](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1420034058) | Innlogging ved uthopp til et eksternt nettsted. |
 | [Oppdatere innsendt oppgave](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/3183050755) | Korrigering og livsløp etter opprettelse. |
 | [FHIR Patch for Oppgave](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1799520257) | Oppdateringsmekanisme og begrensninger. |
 
-Sidene om testmiljøer og sømløst uthopp var lenket fra wikien, men ga ikke lesbart
-sideinnhold ved den automatiske kildekontrollen. Kontroller dem direkte når du
-etablerer integrasjonen. Testadressene over er derfor dokumentert som repoets
-konfigurasjon; kravet om sømløs innlogging er kontrollert mot siden om
-informasjonsoppgaver.
+Kildekontrollen 2. november 2026 omfattet også lesbart innhold på sidene om
+testmiljøer og sømløst uthopp. Eksakte audience-/scope-strenger er fortsatt
+angitt som repoets forslag; offentlig dokumentasjon erstatter ikke godkjenning
+av egen klient, virksomhet og tilgang. Kontroller spesifikasjonene igjen ved
+etablering og senere oppdateringer av integrasjonen.

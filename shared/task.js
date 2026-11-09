@@ -67,6 +67,15 @@ export function parseTaskJson(text) {
   return value;
 }
 const uuid = /^(?:urn:uuid:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Compare UUID identity without changing the identifier serialized in the Task.
+export function normalizeUuid(value) {
+  return typeof value === 'string' && uuid.test(value) ? value.replace(/^urn:uuid:/i, '').toLowerCase() : undefined;
+}
+export function businessIdentifier(task) {
+  const identifiers = Array.isArray(task?.identifier) ? task.identifier : [];
+  const values = new Set(identifiers.filter(i => i?.system === SYSTEMS.uuid).map(i => normalizeUuid(i.value)).filter(Boolean));
+  return values.size === 1 ? [...values][0] : undefined;
+}
 const present = v => typeof v === 'string' && v.trim().length > 0;
 function validCalendarDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value) || !Number.isFinite(Date.parse(value))) return false;
@@ -82,7 +91,7 @@ export function validateTask(task) {
   if (!['proposal', 'plan'].includes(task.intent)) add('intent', 'Velg proposal eller plan.');
   if (task.intent === 'plan') add('intent', 'Plan skal bare brukes når oppgaven er direkte knyttet til helsehjelp.', 'warning');
   if (task.focus?.type !== 'Communication') add('focus.type', 'Informasjonsoppgaver må ha focus.type = Communication.');
-  if (!Array.isArray(task.identifier) || !task.identifier.some(i => i?.system === SYSTEMS.uuid && uuid.test(i.value))) add('identifier', 'Oppgi en UUID som forretningsidentifikator med system urn:ietf:rfc:3986.');
+  if (!businessIdentifier(task)) add('identifier', 'Oppgi én entydig UUID som forretningsidentifikator med system urn:ietf:rfc:3986. Flere ulike UUID-er støttes ikke i denne klienten.');
   if (task.id && !uuid.test(task.id)) add('id', 'Helsenorge krever GUID som ressurs-ID.');
   if (task.id) add('id', 'Ved POST bestemmer Helsenorge ressurs-ID. Bruk identifier til oppfølging.', 'warning');
   for (const [path, value, max, required] of [

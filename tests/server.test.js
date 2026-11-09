@@ -49,6 +49,49 @@ test('unknown delivery status blocks repeated POSTs', async t => {
   assert.equal((await s.post('/api/tasks/send', body)).status, 502);
   assert.equal((await s.post('/api/tasks/send', body)).status, 409);
 });
+
+for (const outcome of ['accepted', 'unknown']) {
+  test(`${outcome} delivery blocks equivalent UUID spellings without changing the outgoing Task`, async t => {
+    const sent = [];
+    const s = await setup(t, async (task, _correlation, environment) => {
+      sent.push({ identifier: task.identifier[0].value, environment });
+      if (outcome === 'unknown') throw new IntegrationError('Unknown', 502, 'delivery_unknown');
+      return { ok: true, status: 201 };
+    });
+    const uuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const original = `URN:UUID:${uuid.toUpperCase()}`;
+    s.task.identifier[0].value = original;
+    const body = { task: s.task, environment: 'test02', confirmTestData: true };
+    const expected = outcome === 'accepted' ? 200 : 502;
+    assert.equal((await s.post('/api/tasks/send', body)).status, expected);
+    for (const value of [uuid, uuid.toUpperCase(), `urn:uuid:${uuid}`, original]) {
+      s.task.identifier[0].value = value;
+      assert.equal((await s.post('/api/tasks/send', body)).status, 409, value);
+    }
+    assert.deepEqual(sent, [{ identifier: original, environment: 'test02' }]);
+    assert.equal((await s.post('/api/tasks/send', { ...body, environment: 'test01' })).status, expected);
+    assert.equal(s.calls(), 2);
+  });
+}
+test('business UUID is independent of identifier order and rejects conflicting UUIDs before sending', async t => {
+  const s = await setup(t);
+  const uuid = s.task.identifier[0];
+  const other = { system: uuid.system, value: 'urn:oid:1.2.3.1' };
+  s.task.identifier = [other, uuid];
+  const body = { task: s.task, environment: 'test02', confirmTestData: true };
+  assert.equal((await s.post('/api/tasks/send', body)).status, 200);
+  s.task.identifier = [uuid, other, { ...uuid, value: uuid.value.toUpperCase() }];
+  assert.equal((await s.post('/api/tasks/send', body)).status, 409);
+  const different = { ...uuid, value: 'urn:uuid:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' };
+  s.task.identifier = [other, different];
+  assert.equal((await s.post('/api/tasks/send', body)).status, 200);
+  s.task.identifier = [uuid, different];
+  assert.equal((await s.post('/api/tasks/send', body)).status, 422);
+  s.task.identifier = [other];
+  assert.equal((await s.post('/api/tasks/send', body)).status, 422);
+  assert.equal(s.calls(), 2);
+});
+
 test('upstream rejection is shown and a corrected payload may be sent', async t => {
   const s = await setup(t, async () => ({ ok: false, status: 422, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'error', diagnostics: 'Invalid recipient' }] } }));
   const body = { task: s.task, environment: 'test02', confirmTestData: true };

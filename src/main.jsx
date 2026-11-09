@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { newTask, exampleTask, getAt, setAt, validateTask, SYSTEMS, AREAS } from '../shared/task.js';
+import { newTask, exampleTask, getAt, setAt, validateTask, businessIdentifier, SYSTEMS, AREAS } from '../shared/task.js';
 import { submissionMessage } from '../shared/submission-feedback.js';
 import { DEFAULT_ENVIRONMENT, TEST_ENVIRONMENTS, getTestEnvironment } from '../shared/environments.js';
 import { postJson, requireSubmissionResult, UnconfirmedResponseError } from './api.js';
@@ -53,7 +53,7 @@ function App() {
   const [dirty, setDirty] = useState(false);
   const environment = getTestEnvironment(environmentId);
   const environmentReady = config?.environments?.some(e => e.id === environment.id && e.endpoint === environment.endpoint);
-  const identifier = Array.isArray(task.identifier) ? task.identifier.find(i => i?.system === SYSTEMS.uuid)?.value : undefined;
+  const identifier = businessIdentifier(task);
   const submissionKey = JSON.stringify([environmentId, identifier]);
   const deliveryBlocked = blockedSubmissions.has(submissionKey);
   const fileInput = useRef(null);
@@ -147,7 +147,7 @@ function App() {
     } finally { setBusy(''); }
   }
   async function send() {
-    if (!environmentReady || !confirmed || busy || deliveryBlocked) return;
+    if (!environmentReady || !identifier || !confirmed || busy || deliveryBlocked) return;
     setBusy('send'); setResult(null);
     // Capture the destination and identifier for this request, including uncertain delivery.
     const sentEnvironment = environmentId, sentKey = submissionKey;
@@ -249,7 +249,8 @@ function App() {
             </section>
           </aside></div>
         </>}
-        {view === 'connection' && <ConnectionSettings environment={environment} auth={config?.auth} busy={busy} connect={connect} saveSettings={saveConnection} />}
+        {/* Keep unsaved connection fields in memory across navigation, including the unload warning. */}
+        <div hidden={view !== 'connection'}><ConnectionSettings environment={environment} auth={config?.auth} busy={busy} connect={connect} saveSettings={saveConnection} /></div>
         {view === 'history' && <><div className="page-heading"><div><p className="eyebrow">DENNE NETTLESERØKTEN</p><h1>Innsendinger</h1><p>Tekniske kvitteringer fra denne økten. Ingen oppgaveinnhold lagres i historikken.</p></div></div><section className="card settings-card">{history.length ? <div className="table-scroll"><table><thead><tr><th>Tidspunkt</th><th>Testområde</th><th>Status</th><th>Korrelasjons-ID</th></tr></thead><tbody>{history.map((r, i) => <tr key={i}><td>{new Date(r.at).toLocaleString('nb-NO')}</td><td>{getTestEnvironment(r.environment)?.label || 'Ukjent'}</td><td>{r.ok ? 'Mottatt' : r.deliveryUnknown ? 'Ukjent levering' : 'Avvist'}{r.status ? ` · HTTP ${r.status}` : ''}</td><td><code>{r.correlationId}</code></td></tr>)}</tbody></table></div> : <div className="empty-state"><Icon name="send" size={36} /><h2>Ingen innsendinger i denne økten</h2><p>Opprett en informasjonsoppgave for å komme i gang.</p><button className="button primary" onClick={() => setView('task')}>Gå til oppgaven</button></div>}</section></>}
         <footer className="page-footer"><span>Informasjonsoppgaver · FHIR R4</span><span>Helsenorge {environment.label} <i /> HelseID test</span></footer>
       </main>
