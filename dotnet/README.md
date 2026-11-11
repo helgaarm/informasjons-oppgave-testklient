@@ -144,7 +144,9 @@ egen godkjent klient og testvirksomhet.
 
 På Windows kan installert Edge brukes ved å sette
 `$env:PLAYWRIGHT_CHANNEL='msedge'`. Sett eventuelt `$env:DOTNET_EXE` til absolutt
-sti til en lokal .NET 10-installasjon for testverten. CI bruker Chromium.
+sti til en lokal .NET 10-installasjon for testverten. CI bruker forhåndsinstallert
+Chrome og hopper over nettlesertestene ved rene dokumentasjonsendringer, som
+beskrevet i [CI-reglene](../docs/repository-security.md).
 
 ## Publisering til lokal kjøring
 
