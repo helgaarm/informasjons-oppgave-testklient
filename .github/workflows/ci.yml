@@ -16,7 +16,7 @@ concurrency:
 jobs:
   test:
     name: Tests (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -46,16 +46,19 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run build
-      - name: Install Chromium for browser regressions
+      # The hosted image includes stable Chrome and its OS dependencies.
+      - name: Check preinstalled Chrome
         if: matrix.node == 24 && steps.changes.outputs.browser_tests != 'false'
-        run: npx playwright install --with-deps chromium
+        run: google-chrome --version
       - name: Test browser regressions with local mocks
         if: matrix.node == 24 && steps.changes.outputs.browser_tests != 'false'
+        env:
+          PLAYWRIGHT_CHANNEL: chrome
         run: npm run test:ui
 
   dotnet:
     name: .NET companion
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -84,11 +87,13 @@ jobs:
         working-directory: dotnet
       - run: dotnet test Testklient.slnx --no-build --no-restore
         working-directory: dotnet
-      - run: npx playwright install --with-deps chromium
+      - name: Check preinstalled Chrome
         if: steps.changes.outputs.browser_tests != 'false'
-        working-directory: dotnet/frontend
+        run: google-chrome --version
       - run: npm run test:ui
         if: steps.changes.outputs.browser_tests != 'false'
+        env:
+          PLAYWRIGHT_CHANNEL: chrome
         working-directory: dotnet/frontend
 
   secrets:

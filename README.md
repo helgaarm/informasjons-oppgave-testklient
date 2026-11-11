@@ -359,11 +359,13 @@ uleselig svar etter innsending, avvisninger som kan rettes, og låsing av
 JSON-editoren under behandling. Eksterne nettleserforespørsler blokkeres.
 De dekker også at like UUID-er med ulik skrivemåte fortsatt sperres, at
 ulagrede tilkoblingsfelt overlever navigasjon og at nøkkelfeltet tømmes etter lagring.
-På Linux/CI kan nødvendige nettleserpakker installeres med
+Ved lokal kjøring på Linux kan nødvendige nettleserpakker installeres med
 `npx playwright install --with-deps chromium`. For å bruke installert Edge i
 PowerShell: `$env:PLAYWRIGHT_CHANNEL='msedge'; npm run test:ui`.
 CI tester minimumsversjonen Node.js 22.19.0 og Node.js 24, og kjører
-nettlesertestene med Chromium på Node.js 24.
+nettlesertestene med forhåndsinstallert Chrome på Node.js 24. Ved rene
+dokumentasjonsendringer hoppes nettlesertestene over; bygg, enhetstester og
+sikkerhetskontroller kjøres fortsatt. Se [CI-reglene](docs/repository-security.md).
 
 Testene bruker lokale HTTP-servere, midlertidige konfigurasjonsfiler, genererte engangsnøkler og mock av eksterne
 tjenester. De tester lokal lagring, feltvalidering, nøkkelbytte og samtidige kall,

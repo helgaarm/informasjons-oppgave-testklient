@@ -35,8 +35,8 @@ npm-lockfilene. NuGet-restore med `--locked-mode` feiler ved kjente sårbarheter
 direkte og transitive avhengigheter. Den separate .NET-jobben kjører bygg,
 MSTest, Vitest og Playwright mot C#-serveren med syntetiske data.
 
-Ved rene dokumentasjonsendringer hopper begge klientene over installasjon av
-Chromium og Playwright-testene. Dette gjelder bare `README.md`, `SECURITY.md`,
+Ved rene dokumentasjonsendringer hopper begge klientene over nettlesertrinnene
+og Playwright-testene. Dette gjelder bare `README.md`, `SECURITY.md`,
 `dotnet/README.md` og Markdown-filer under `docs/`. CI sammenligner hele PR-en
 fra felles utgangspunkt til siste commit; ved push sammenlignes før- og etter-commit.
 Begge sider av flyttede filer tas med, slik at kode som flyttes til dokumentasjon
@@ -45,6 +45,13 @@ endringsgrunnlag kjører full testing, også ved endringer i selve CI-oppsettet.
 Bygg, enhetstester, formatkontroll med `git diff --check` når endringsgrunnlaget
 er kjent, og sikkerhetskontrollene kjøres fortsatt. Jobbnavn og grenbeskyttelse
 beholdes; bare nettlesertrinnene er betingede.
+
+Nettlesertestene bruker forhåndsinstallert stabil Chrome på `ubuntu-24.04` via
+`PLAYWRIGHT_CHANNEL=chrome`. Dermed trenger CI ikke å laste ned Chromium eller
+installere Ubuntu-pakker for hver kjøring. Chrome-versjonen logges før testene;
+manglende nettleser eller testfeil stopper jobben. Nettleserversjonen følger
+[GitHubs Ubuntu-miljø](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#browsers-and-drivers),
+og kan endres når miljøet oppdateres. [Playwright støtter Chrome-kanalen](https://playwright.dev/docs/browsers#google-chrome--microsoft-edge).
 
 ## Aktiver innstillingene
 
