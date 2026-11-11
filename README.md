@@ -9,6 +9,15 @@ Vil du bruke koden som eksempel i eget system? Se
 med Mermaid-diagrammer, FHIR-mapping, C#-/Node.js-eksempler, HelseID,
 leveringskontroll og lenker til Helsenorges spesifikasjoner.
 
+Ved planlegging av en integrasjon, bruk også
+[sjekklisten for oppkobling til Oppgave API](docs/sjekkliste-oppkobling-oppgave-api.md)
+til avklaringer mellom Helsenorge, leverandør og helseaktør før test og produksjon.
+Testscenarioer og resultater føres i [egen testplan](docs/testplan-oppkobling-oppgave-api.md),
+med egne scenarioer for sømløst uthopp.
+
+[Feltoversikten for PATCH](docs/patch-felt-og-oppgavetyper.md) viser feltstøtte og
+begrensninger for alle seks oppgavetyper, kontrollert mot HN-Oppgave-koden.
+
 ## Lisens
 
 Prosjektet er lisensiert under [MIT-lisensen](LICENSE).

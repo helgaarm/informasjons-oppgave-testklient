@@ -7,7 +7,10 @@ kan gjenbrukes i en egen backend. Frontend kan bygges med valgfri teknologi.
 
 Veiledningen er uavhengig av NHN. Offisielle krav og tilgangsavklaringer følger
 [Oppgave API](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/2109734913)
-og sidene det lenkes til underveis. Kildene er gjennomgått **2. november 2026**.
+og sidene det lenkes til underveis. Kildene er gjennomgått **2. november 2026**;
+PATCH-veiledningen i kapittel 7 er supplert med Helsenorge- og HL7-kilder og
+kontrollert mot vedlagte `HN-Oppgave.zip` **11. november 2026**. Se
+[kodegrunnlag og avvik](patch-felt-og-oppgavetyper.md).
 Arkitekturforslagene er våre anbefalinger; de er ikke en del av API-kontrakten.
 Eksemplene er kontrollert lokalt med syntetiske data, ikke godkjent ved reell
 innsending til Helsenorge.
@@ -15,6 +18,10 @@ innsending til Helsenorge.
 For oppstart av selve testklienten: [Node-versjonen](../README.md) eller
 [.NET-versjonen](../dotnet/README.md). Koden er [MIT-lisensiert](../LICENSE);
 behold lisens- og opphavsrettsteksten ved viderebruk. Avhengigheter har egne lisenser.
+
+For felles avklaringer med Helsenorge og helseaktøren, bruk
+[sjekklisten for oppkobling til Oppgave API](sjekkliste-oppkobling-oppgave-api.md).
+Testscenarioer og resultater er samlet i [testplanen for oppkobling](testplan-oppkobling-oppgave-api.md).
 
 ## Innhold
 
@@ -25,6 +32,7 @@ behold lisens- og opphavsrettsteksten ved viderebruk. Avhengigheter har egne lis
 - [5. HelseID og innsending](#5-helseid-og-innsending)
 - [6. Kvittering, feil og ukjent levering](#6-kvittering-feil-og-ukjent-levering)
 - [7. Innhold, representasjon og senere endringer](#7-innhold-representasjon-og-senere-endringer)
+  - [7.1 Oppdatere en oppgave med PATCH](#71-oppdatere-en-oppgave-med-patch)
 - [8. Finn frem i kildekoden](#8-finn-frem-i-kildekoden)
 - [9. Fra kodeeksempel til egen integrasjon](#9-fra-kodeeksempel-til-egen-integrasjon)
 - [10. Videre lesning](#10-videre-lesning)
@@ -619,12 +627,314 @@ avgrensning i testklienten, ikke en påstand om at Helsenorge generelt mangler
 funksjonaliteten. Ikke bruk et tomt felt som dokumentasjon på at en bestemt
 representasjonsregel er valgt.
 
-Eget system må også planlegge for oppgaver som ble sendt med feil innhold, eller
-som blir uaktuelle. Oppdatering og korrigering har egne regler; ikke modeller
-enhver endring som en ny POST. Testklienten demonstrerer opprettelse og har ikke
-implementert oppdatering, kansellering eller statusoppfølging. Se
-[Oppdatere innsendt oppgave](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/3183050755)
-og [Oppdatere oppgave via FHIR Patch](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1799520257).
+### 7.1 Oppdatere en oppgave med PATCH
+
+Bruk oppdatering når en allerede opprettet oppgave trenger korrigert beskrivelse,
+ny frist eller kansellering. Helsenorge dokumenterer **FHIRPath Patch**, der
+endringene beskrives i en FHIR `Parameters`-ressurs. Eksemplene nedenfor er
+byggegrunnlag for egen integrasjon. **Testklienten implementerer fortsatt bare
+opprettelse**; den har ingen PATCH-rute eller funksjon for statusoppfølging.
+[Helsenorges oppdateringsbeskrivelse](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1799520257).
+
+HL7 beskriver flere PATCH-formater. En JSON-kodet `Parameters`-ressurs med
+`Content-Type: application/fhir+json` er FHIRPath Patch; en liste med
+`op`/`path`/`value` og medietypen `application/json-patch+json` er JSON Patch.
+Bruk formatet Helsenorge dokumenterer. Her benyttes HL7s **FHIR R4 (4.0.1)** som
+referanse, slik som ressursmodellen i repoet; en lenke til en nyere HL7-utgave
+innebærer ikke at integrasjonen skal bytte FHIR-versjon.
+[HL7 R4: PATCH](https://hl7.org/fhir/R4/http.html#patch).
+
+Helsenorge har også et separat, forenklet status-API:
+`POST [baseUrl]/oppgaverest/v1/OppdaterStatus`. Det har egen JSON-kontrakt og
+varsler ikke innbygger. Det er ikke endepunktet for eksemplene nedenfor.
+[Oppdatere innsendt oppgave](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/3183050755).
+
+#### Hvilke endringer tillates?
+
+Se [feltoversikten for alle oppgavetyper](patch-felt-og-oppgavetyper.md) for
+tillatte operasjoner, typeavhengig statusflyt og felt som avvises. Oversikten
+er kontrollert mot vedlagte `HN-Oppgave.zip` 11. november 2026 og omfatter også
+skjema, samtykke, generiske eksterne oppgaver, verktøystart og betaling.
+
+| Felt | Bruk |
+| --- | --- |
+| `Task.description` | Korrigert oppgavebeskrivelse. |
+| `Task.restriction.period.start` | Endret startdato; støttet i den gjennomgåtte koden. |
+| `Task.restriction.period.end` og `hn-task-deadline` | Endrede frister. |
+| `Task.status` og `Task.statusReason` | Status og begrunnelse; begrunnelsen krever samtidig statusendring. |
+| `Task.note` | Forklaring til endringen; viktig innhold hører hjemme i beskrivelsen. |
+| `Task.basedOn` | Referanser til andre Helsenorge-elementer; følg NHNs særregler for listeoppdatering. |
+
+Etter de offentlige reglene kan beskrivelse, frister, status, statusbegrunnelse
+og `basedOn` ikke endres når status er `completed`, `cancelled` eller
+`entered-in-error`, eller gyldigheten er utløpt. Gyldigheten utløper etter den
+seneste av sluttdato og eventuell deadline.
+Nye frister må ligge minst én dag frem i tid, og deadline må være senere enn
+sluttdato. Hvis opprinnelig oppgave har deadline, må begge fristene sendes når
+sluttdato endres, også når deadline beholdes.
+[NHNs feltbegrensninger og forretningsregler](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1799520257).
+
+**Kodekontrollen avdekker avvik:** En uendret deadline kan bli erstattet av ny
+sluttdato i lagret gyldighet, selv om begge sendes. Endring bare av `basedOn`
+omgår også status- og utløpskontrollen. Disse tilfellene må avklares før bruk;
+se [avvikene i feltoversikten](patch-felt-og-oppgavetyper.md#avvik-og-forbehold-som-må-avklares-ved-oppkobling).
+Nye notater alene er tillatt etter fullføring eller utløp i koden og eksisterende
+tester. Dette gir ikke adgang til å endre andre felt samtidig.
+
+Direkte PATCH av `instantiatesUri`, tittel (`code.text`), mottaker (`owner`),
+avsender (`requester`), oppgavetype (`focus`), `intent` og Task-metadata
+avvises med **2146** i den gjennomgåtte koden. Bruk ikke erstatning av et større
+element som en antatt måte å omgå feltbegrensningene på. Se den
+[nøyaktige operasjonslisten](patch-felt-og-oppgavetyper.md#tillatte-operasjoner-og-nøyaktige-feltstier).
+
+For **informasjonsoppgaver** setter Helsenorge `completed` ved første uthopp.
+Informasjonsnettstedet skal ikke sende denne statusendringen. NHNs eksempel på
+ekstern fullføring gjelder generiske oppgaver. Kansellering fjerner derimot
+informasjonsoppgavens lenkeknapp; vurder derfor konsekvensen for innbygger.
+[Informasjonsoppgave](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/2619211802).
+
+#### Endepunkt, identitet og autentisering
+
+Send til `PATCH [baseUrl]/oppgave/v1/Task/[id]`. Bruk den lagrede ressurs-ID-en fra
+opprettelsen, ikke en ny UUID, fødselsnummer eller en antakelse om at
+`Task.identifier` og `Task.id` er like. NHN krever GUID som ressurs-ID;
+HL7 skiller ressursidentitet fra forretningsidentifikator.
+[NHN: Task.id](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/742948883),
+[HL7 R4: Task.identifier](https://hl7.org/fhir/R4/task-definitions.html#Task.identifier).
+
+Eksempel på HTTP-hoder i **Test02**; erstatt ID og plassholdere med verdier fra
+egen testintegrasjon. Request-body er én av `Parameters`-ressursene nedenfor.
+
+```http
+PATCH /oppgave/v1/Task/edaa7e3b-d158-47f2-b6c9-76308d4ad49a HTTP/1.1
+Host: eksternapi.hn2.test.nhn.no
+Authorization: DPoP <access_token>
+DPoP: <nytt_bevis_for_PATCH_og_hele_ressursadressen>
+Content-Type: application/fhir+json
+Accept: application/fhir+json
+X-Correlation-ID: <korrelasjons_id_for_dette_kallet>
+```
+
+Gjenbruk prinsippene for systemkontekst i kapittel 5, med samme autoriserte
+virksomhet og riktig miljø. Lag API-beviset med `htm = PATCH` og `htu` lik hele
+ressursadressen, inkludert `/Task/[id]`, samt tokenbinding og eventuell API-nonce.
+Tokenkallet har fortsatt sin egen metode og adresse.
+
+Repoets `sendTask`/`SendTask` sender POST til samlingen. En egen oppdateringsmetode
+må derfor håndtere både HTTP-metode, ressursadresse og `Parameters`-body.
+Node-klientens `proof` tar metode som argument; .NET-klientens `Proof` bruker
+foreløpig `POST` og må også tilpasses. Å bare bytte HTTP-metoden gir feil DPoP-bevis.
+Se [Node-transporten](../server/helseid.js) og
+[.NET-transporten](../dotnet/src/Testklient.Api/HelseIdClient.cs).
+
+#### Eksempel: korriger beskrivelse og legg til notat
+
+Eksemplet forutsetter en aktiv oppgave med eksisterende `description`.
+`replace` peker på feltet som finnes; `add` peker på forelderen `Task` og angir
+`note` som feltnavn. HL7 krever riktig datatype og gyldig ressurs etter endringen.
+Operasjonene behandles i oppgitt rekkefølge.
+[HL7 R4: FHIRPath Patch](https://hl7.org/fhir/R4/fhirpatch.html).
+
+```json
+{
+  "resourceType": "Parameters",
+  "parameter": [
+    {
+      "name": "operation",
+      "part": [
+        { "name": "type", "valueCode": "replace" },
+        { "name": "path", "valueString": "Task.description" },
+        { "name": "value", "valueString": "Les den oppdaterte informasjonen før avtalen." }
+      ]
+    },
+    {
+      "name": "operation",
+      "part": [
+        { "name": "type", "valueCode": "add" },
+        { "name": "path", "valueString": "Task" },
+        { "name": "name", "valueString": "note" },
+        {
+          "name": "value",
+          "valueAnnotation": {
+            "time": "2026-11-11T12:00:00+01:00",
+            "text": "Beskrivelsen er presisert etter endret avtale."
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Notatet er synlig for innbygger og skal ha tidsstempel. Bruk faktisk
+endringstidspunkt; datoen her er syntetisk.
+[NHNs eksempler på beskrivelse og notat](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1679360035).
+
+#### Eksempel på avvist PATCH av informasjonslenke
+
+**Denne operasjonen avvises med feilkode 2146 i vedlagte HN-Oppgave.**
+Informasjonslenken ligger i `Task.instantiatesUri`, som ikke er med i
+validatorens tillatte feltstier. Eksemplet beholdes som et negativt testtilfelle:
+det viser HL7-formatet, men skal ikke brukes som en støttet URL-oppdatering.
+Se [kodegrunnlaget K2](patch-felt-og-oppgavetyper.md#kodegrunnlag-og-kildereferanser).
+
+Forsøket forutsetter at `Task.instantiatesUri` allerede finnes, og ber om å
+erstatte `https://example.org/informasjon/forberedelse` med
+`https://example.org/informasjon/oppdatert-forberedelse`. Verdien sendes som
+`valueUri`, fordi feltet har FHIR-datatypen `uri`.
+[HL7 R4: Task.instantiatesUri](https://hl7.org/fhir/R4/task-definitions.html#Task.instantiatesUri),
+[HL7 R4: FHIRPath Patch](https://hl7.org/fhir/R4/fhirpatch.html).
+
+```json
+{
+  "resourceType": "Parameters",
+  "parameter": [
+    {
+      "name": "operation",
+      "part": [
+        { "name": "type", "valueCode": "replace" },
+        { "name": "path", "valueString": "Task.instantiatesUri" },
+        { "name": "value", "valueUri": "https://example.org/informasjon/oppdatert-forberedelse" }
+      ]
+    }
+  ]
+}
+```
+
+Forventet resultat er avvisning og uendret informasjonslenke. Korrekt DPoP-bevis
+og gyldig FHIR-format gjør ikke feltet oppdaterbart. Avtal håndtering av flyttet
+informasjon med Helsenorge og innholdseieren; det finnes ingen støttet
+URL-PATCH i den kontrollerte operasjonslisten.
+
+#### Eksempel: endre sluttdato og absolutt frist
+
+Eksemplet forutsetter ordinær sluttdato **1. juni 2027** og deadline
+**8. juni 2027**. Det erstatter eksisterende `Task.restriction` med sluttdato
+**15. juni 2027** og deadline **22. juni 2027**, slik at begge datoene faktisk
+endres. Gjeldende `restriction` har i dette eksemplet ingen andre verdier som
+skal bevares. Datoene må tilpasses den konkrete oppgaven og en avtalt endring.
+
+Å sende en uendret deadline er ikke tilstrekkelig til å bevare lagret gyldighet
+i den gjennomgåtte koden. Deadline alene kan heller ikke endres uten en faktisk
+endring av sluttdato. Se [fristavvikene](patch-felt-og-oppgavetyper.md#endret-sluttdato-med-uendret-deadline).
+
+```json
+{
+  "resourceType": "Parameters",
+  "parameter": [
+    {
+      "name": "operation",
+      "part": [
+        { "name": "type", "valueCode": "replace" },
+        { "name": "path", "valueString": "Task.restriction" },
+        {
+          "name": "value",
+          "part": [
+            {
+              "name": "extension",
+              "part": [
+                { "name": "url", "valueUri": "http://helsenorge.no/fhir/StructureDefinition/hn-task-deadline" },
+                { "name": "value", "valueDate": "2027-06-22" }
+              ]
+            },
+            { "name": "period", "valuePeriod": { "end": "2027-06-15" } }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+`restriction` er et sammensatt BackboneElement, ikke en datatype som kan sendes
+som `valueRestriction`. Derfor bygges verdien med nestede `part`-elementer.
+Erstatning gjelder hele elementet: ta med øvrig innhold som skal beholdes,
+for eksempel eksisterende `period.start` og relevante extensions. Har oppgaven
+ingen deadline, viser NHN også varianten med bare `period`. Ikke kopier
+eksemplet ukritisk over en annen `restriction`.
+[HL7: sammensatte verdier](https://hl7.org/fhir/R4/fhirpatch.html),
+[NHN: endring av frister](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1679360035).
+
+#### Eksempel: kanseller en aktiv oppgave
+
+For en oppgave som ikke lenger skal utføres, kan status erstattes med
+`cancelled`, innenfor NHNs status- og gyldighetsregler:
+
+```json
+{
+  "resourceType": "Parameters",
+  "parameter": [
+    {
+      "name": "operation",
+      "part": [
+        { "name": "type", "valueCode": "replace" },
+        { "name": "path", "valueString": "Task.status" },
+        { "name": "value", "valueCode": "cancelled" }
+      ]
+    }
+  ]
+}
+```
+
+Ved behov for `statusReason`, send begrunnelsen i samme PATCH som statusendringen.
+Statusverdien må faktisk endres; det er ikke nok å sende gjeldende verdi på nytt.
+Feltet er en `CodeableConcept`, ikke en vanlig streng. NHN viser `replace` av
+hele `Task.statusReason` med en nestet `text`-del. Koden tillater bare denne
+feltstien og operasjonen: både `add statusReason` og direkte endring av
+`Task.statusReason.text` avvises. HL7 krever at målet for `replace` finnes.
+Håndtering når begrunnelsen mangler fra før må derfor verifiseres mot avtalt
+API-versjon; `add` er ikke en tilgjengelig reserveoperasjon her.
+Se [tillatte operasjoner](patch-felt-og-oppgavetyper.md#tillatte-operasjoner-og-nøyaktige-feltstier),
+[NHNs statuseksempel](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1679360035),
+[HL7: operasjonsregler](https://hl7.org/fhir/R4/fhirpatch.html),
+[HL7: Task.statusReason](https://hl7.org/fhir/R4/task-definitions.html#Task.statusReason).
+
+#### Varsling, kvittering og samtidige endringer
+
+Helsenorge beskriver varsling ved endring som standard. Koden har imidlertid
+ulike regler valgt med `BrukNyttOppgavesenter`; beskrivelsesendring alene varsler
+ikke med den nye regelen. Se [kodefunnet om varsling](patch-felt-og-oppgavetyper.md#varsling-av-beskrivelsesendringer).
+For å undertrykke varsling angis `meta.tag` på **Parameters**, med
+`system = http://helsenorge.no/fhir/varsling` og `code = "1"`.
+NHN tillater ikke andre metadata på denne Parameters-ressursen; ikke kopier
+Task-metadata som `meta.security` inn i patchen. Velg varsling bevisst ut fra
+brukstilfellet.
+[NHN: varsling og metadata](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1679360035),
+[NHN: standardvarsling](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1799520257).
+
+NHNs REST-beskrivelse angir `200 OK` for vellykket PATCH og `400 Bad Request`
+ved feil. Håndter også autentiseringsfeil, transportfeil og eventuelle FHIR
+`OperationOutcome`-svar. Ikke krev at et vellykket svar inneholder en ny `Task`:
+kontroller status og responsinnhold før deserialisering, og lagre kvitteringen
+mot den konkrete endringsbestillingen.
+[NHN: FHIR REST-operasjoner](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1254654012).
+
+HL7 beskriver optimistisk samtidighetskontroll med serverens `ETag` og
+`If-Match`, der en versjonskonflikt gir `412 Precondition Failed`. NHN oppgir
+imidlertid at ressursversjonering foreløpig ikke støttes. Ikke konstruer en
+versjon eller forutsett at `If-Match` beskytter oppdateringen. Betinget PATCH
+via søk er en annen mekanisme; generell FHIR-dokumentasjon dokumenterer ikke
+at Oppgave API tilbyr den.
+[HL7: versjonskontroll](https://hl7.org/fhir/R4/http.html#concurrency),
+[NHN: støttede REST-operasjoner](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1254654012).
+
+Som arkitekturanbefaling bør egen integrasjon behandle endringer sekvensielt
+per virksomhet, miljø og ressurs-ID. Dette hindrer konkurrerende egne skriv,
+men låser ikke Helsenorge mens innbygger utfører oppgaven. Vær forberedt på at
+en ellers gyldig korrigering avvises fordi oppgaven nettopp ble fullført.
+
+Gi hver endringsbestilling en egen stabil ID og lagre forventet endring og utfall
+varig. Sperren for gjentatt opprettelse kan ikke brukes som en permanent sperre
+mot alle senere endringer av samme Task. Ved timeout eller brudd etter sending
+skal leveringen regnes som uavklart. Gjentatt `add note` kan gi flere notater,
+og varsling kan påvirkes; ikke send automatisk på nytt uten avstemming. Avklar
+tilgjengelig oppslag og oppfølgingsprosedyre med NHN, slik som i kapittel 6.
+
+Valider `Parameters` som egen FHIR-ressurs og prøv operasjonene mot en syntetisk
+Task før integrasjonstest. Repoets opprettelsesvalidator krever blant annet
+`status = ready` og er ikke en validator for patchdokumenter eller alle gyldige
+tilstander etter oppdatering. Kontroller både FHIR-strukturen, endringsreglene
+og hvilke eksisterende verdier som beholdes.
 
 ## 8. Finn frem i kildekoden
 
@@ -679,6 +989,11 @@ Forslag til tester i egen integrasjon:
 | UUID-format | Store/små bokstaver og valgfritt URN-prefiks omgår ikke sperren etter akseptert eller ukjent levering; miljøene holdes adskilt. |
 | Virksomhetsgrenser | En bestilling kan ikke få en annen virksomhets token ved konfigurasjonsbytte eller parallell kjøring. |
 | Usikker levering | Brudd etter sending og krasj før lagret kvittering utløser oppfølging, ikke automatisk ny POST. |
+| PATCH og DPoP | `Parameters` sendes til riktig `/Task/[id]`; beviset gjelder `PATCH` og ressursadressen, ikke opprettelseskallet. |
+| PATCH og databevaring | Beskrivelse og nye notater får riktig innhold. Test både endrede og uendrede fristverdier, kontroller lagret gyldighet og avklar fristavvikene før bruk. |
+| PATCH og feltstøtte | URL, tittel og mottaker avvises med 2146 uten delvis oppdatering. Startdato og de øvrige tillatte operasjonene testes for aktuell oppgavetype. |
+| PATCH og livsløp | Sperrede felt avvises etter avslutning/utløp; notat alene kan legges til. Begrunnelse uten faktisk statusendring avvises. Avviket for bare `basedOn` er avklart. |
+| PATCH og uavklart utfall | Timeout før kvittering utløser avstemming; gjentatt kjøring gir ikke utilsiktet nytt notat eller varsel. |
 | Feilsvar | FHIR-feil, OAuth-feil, tekstsvar og uleselige svar håndteres uten å eksponere hemmeligheter. |
 | Innbyggerreise | Riktig informasjon, forventet representasjon og fungerende uthopp; ingen påstand om lest innhold basert på uthopp alene. |
 
@@ -710,6 +1025,11 @@ spesifikasjonen og avklaringer med NHN som styrer integrasjonen.
 | [Sømløst uthopp](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1420034058) | Innlogging ved uthopp til et eksternt nettsted. |
 | [Oppdatere innsendt oppgave](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/3183050755) | Korrigering og livsløp etter opprettelse. |
 | [FHIR Patch for Oppgave](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1799520257) | Oppdateringsmekanisme og begrensninger. |
+| [NHNs detaljerte PATCH-eksempler](https://helsenorge.atlassian.net/wiki/spaces/HELSENORGE/pages/1679360035) | Parameters, status, beskrivelse, notater og frister. |
+| [HL7 R4: FHIRPath Patch](https://hl7.org/fhir/R4/fhirpatch.html) | Operasjoner, FHIRPath-uttrykk og nestede parameterverdier. |
+| [HL7 R4: REST PATCH](https://hl7.org/fhir/R4/http.html#patch) | PATCH-formater, HTTP og forskjellen fra full erstatning. |
+| [HL7 R4: samtidighetskontroll](https://hl7.org/fhir/R4/http.html#concurrency) | ETag og If-Match når serveren støtter versjonering. |
+| [HL7 R4: Task-definisjoner](https://hl7.org/fhir/R4/task-definitions.html) | Ressursidentitet, datatyper og kardinalitet. |
 
 Kildekontrollen 2. november 2026 omfattet også lesbart innhold på sidene om
 testmiljøer og sømløst uthopp. Eksakte audience-/scope-strenger er fortsatt
